@@ -7,8 +7,11 @@ import {forceLivePreviewStatusRefresh} from "./livePreviewRefresh";
 export function createPasteExtension(plugin: ObsidianLinearPlugin) {
 	return EditorView.domEventHandlers({
 		paste(event, view) {
-			const clipboardText = event.clipboardData?.getData("text/plain") ?? "";
-			if (!clipboardText || !isSupportedLinearPasteInput(clipboardText)) {
+			const clipboardText = getSupportedLinearPasteInput(
+				event.clipboardData?.getData("text/plain") ?? "",
+				event.clipboardData?.getData("text/html") ?? "",
+			);
+			if (!clipboardText) {
 				return false;
 			}
 
@@ -17,6 +20,21 @@ export function createPasteExtension(plugin: ObsidianLinearPlugin) {
 			return true;
 		},
 	});
+}
+
+export function getSupportedLinearPasteInput(plainText: string, htmlText = ""): string | null {
+	if (plainText && isSupportedLinearPasteInput(plainText)) {
+		return plainText;
+	}
+
+	if (htmlText) {
+		const extractedText = extractLinearPasteTextFromHtml(htmlText);
+		if (extractedText && isSupportedLinearPasteInput(extractedText)) {
+			return extractedText;
+		}
+	}
+
+	return null;
 }
 
 export function isSupportedLinearPasteInput(input: string): boolean {
@@ -68,4 +86,31 @@ function isSupportedLinearReferenceLine(line: string): boolean {
 	}
 
 	return true;
+}
+
+function extractLinearPasteTextFromHtml(html: string): string {
+	const references: string[] = [];
+	const anchorRegex = /<a\b[^>]*href=(["'])(https:\/\/linear\.app\/[^"' ]+)\1[^>]*>([\s\S]*?)<\/a>/gi;
+
+	for (const match of html.matchAll(anchorRegex)) {
+		const [, , url, rawLabel] = match;
+		if (!url) {
+			continue;
+		}
+
+		const label = decodeHtmlEntities((rawLabel ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+		references.push(label ? `- [${label}](${url})` : url);
+	}
+
+	return references.join("\n");
+}
+
+function decodeHtmlEntities(text: string): string {
+	return text
+		.replace(/&nbsp;/g, " ")
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, "\"")
+		.replace(/&#39;|&#x27;/g, "'");
 }

@@ -4,7 +4,7 @@ vi.mock("./livePreviewRefresh", () => ({
 	forceLivePreviewStatusRefresh: () => undefined,
 }));
 
-import {isSupportedLinearPasteInput} from "./pasteExtension";
+import {getSupportedLinearPasteInput, isSupportedLinearPasteInput} from "./pasteExtension";
 
 describe("pasteExtension", () => {
 	it("supports plain copied Linear URL lists", () => {
@@ -29,6 +29,20 @@ describe("pasteExtension", () => {
 		const input = "- [TYP-37: Reach out to these people after the Google Classroom trial](https://linear.app/type-the-word/issue/TYP-37/reach-out-to-these-people-after-the-google-classroom-trial) - [TYP-56: When log tooltips go down the background is clipped by the following div](https://linear.app/type-the-word/issue/TYP-56/when-log-tooltips-go-down-the-background-is-clipped-by-the-following)";
 
 		expect(isSupportedLinearPasteInput(input)).toBe(true);
+	});
+
+	it("falls back to html clipboard data from Linear", () => {
+		const html = [
+			"<ul>",
+			"<li><a href=\"https://linear.app/type-the-word/issue/TYP-71/crm-for-managing-demo-users\">TYP-71: CRM for managing Demo users</a></li>",
+			"<li><a href=\"https://linear.app/type-the-word/issue/TYP-65/prevent-assignment-completion-when-your-accuracy-is-below-a-certain\">TYP-65: Prevent assignment completion when your accuracy is below a certain point.</a></li>",
+			"</ul>",
+		].join("");
+
+		expect(getSupportedLinearPasteInput("", html)).toBe([
+			"- [TYP-71: CRM for managing Demo users](https://linear.app/type-the-word/issue/TYP-71/crm-for-managing-demo-users)",
+			"- [TYP-65: Prevent assignment completion when your accuracy is below a certain point.](https://linear.app/type-the-word/issue/TYP-65/prevent-assignment-completion-when-your-accuracy-is-below-a-certain)",
+		].join("\n"));
 	});
 
 	it("supports markdown-link bullet lists wrapped in fenced code blocks", () => {

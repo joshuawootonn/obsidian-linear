@@ -23,6 +23,12 @@ export function normalizeWorkspaceSlug(workspaceSlug: string): string {
 	return workspaceSlug.trim().toLowerCase();
 }
 
+export function normalizeLinearReferenceInput(input: string): string {
+	return input
+		.replace(/\u00A0/g, " ")
+		.replace(/[\u200B-\u200D\u2060\uFEFF]/g, "");
+}
+
 export function parseLinearIssueUrl(input: string): ParsedLinearIssueUrl | null {
 	let parsedUrl: URL;
 	try {
@@ -63,10 +69,11 @@ export function parseLinearIssueUrl(input: string): ParsedLinearIssueUrl | null 
 }
 
 export function extractLinearIssueReferences(input: string): ParsedLinearIssueReference[] {
+	const normalizedInput = normalizeLinearReferenceInput(input);
 	const seen = new Set<string>();
 	const references: ParsedLinearIssueReference[] = [];
 
-	for (const rawLine of input.split(/\r?\n/)) {
+	for (const rawLine of normalizedInput.split(/\r?\n/)) {
 		const line = rawLine.trim();
 		if (!line) {
 			continue;

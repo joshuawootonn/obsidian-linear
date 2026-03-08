@@ -25,12 +25,12 @@ export function isSupportedLinearPasteInput(input: string): boolean {
 		return false;
 	}
 
-	const normalizedInput = input
+	const meaningfulLines = input
 		.split(/\r?\n/)
 		.map((line) => line.trim())
-		.filter(Boolean);
+		.filter((line) => line.length > 0 && !isIgnorablePasteLine(line));
 
-	return normalizedInput.length === references.length;
+	return meaningfulLines.length === references.length;
 }
 
 async function handlePaste(plugin: ObsidianLinearPlugin, view: EditorView, clipboardText: string): Promise<void> {
@@ -49,4 +49,8 @@ async function handlePaste(plugin: ObsidianLinearPlugin, view: EditorView, clipb
 	requestAnimationFrame(() => {
 		forceLivePreviewStatusRefresh(view);
 	});
+}
+
+function isIgnorablePasteLine(line: string): boolean {
+	return line === "```";
 }

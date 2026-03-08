@@ -25,6 +25,17 @@ describe("pasteExtension", () => {
 		expect(isSupportedLinearPasteInput(input)).toBe(true);
 	});
 
+	it("supports markdown-link bullet lists wrapped in fenced code blocks", () => {
+		const input = [
+			"```",
+			"- [TYP-73: Follow up with newsletter responders about CRM](https://linear.app/type-the-word/issue/TYP-73/follow-up-with-newsletter-responders-about-crm)",
+			"- [TYP-69: Text the ambassador c-group and see if people could connect me with any schools they know in Milwaukee.](https://linear.app/type-the-word/issue/TYP-69/text-the-ambassador-c-group-and-see-if-people-could-connect-me-with)",
+			"```",
+		].join("\n");
+
+		expect(isSupportedLinearPasteInput(input)).toBe(true);
+	});
+
 	it("rejects mixed multiline input where some lines are not Linear references", () => {
 		const input = [
 			"https://linear.app/type-the-word/issue/TYP-37/reach-out-to-these-people-after-the-google-classroom-trial",

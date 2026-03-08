@@ -1,99 +1,185 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import {Editor, Notice, Plugin} from "obsidian";
+import {createLivePreviewStatusExtension} from "./editor/livePreviewStatusExtension";
+import {createPasteExtension} from "./editor/pasteExtension";
+import {LinearClient} from "./linear/client";
+import type {TaskSeed} from "./linear/types";
+import {extractLinearIssueUrls} from "./linear/workspaces";
+import {registerLinkRenderer} from "./render/linkRenderer";
+import {
+	DEFAULT_SETTINGS,
+	ObsidianLinearSettingTab,
+	type LinearPluginSettings,
+	sanitizeSettings,
+} from "./settings";
+import {TaskSyncService} from "./sync/taskSync";
+import {buildTasksFromSeeds} from "./sync/taskParser";
 
-// Remember to rename these classes and interfaces!
+type InternalAppSettings = {
+	open: () => void;
+	openTabById: (id: string) => void;
+};
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class ObsidianLinearPlugin extends Plugin {
+	settings: LinearPluginSettings;
+	client: LinearClient;
+	taskSync: TaskSyncService;
+	pendingWorkspaceSlug?: string;
+	private pollIntervalId: number | null = null;
 
-	async onload() {
+	async onload(): Promise<void> {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
+		this.client = new LinearClient(() => this.settings);
+		this.taskSync = new TaskSyncService(this);
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
+		this.addSettingTab(new ObsidianLinearSettingTab(this.app, this));
+		this.registerEditorExtension([
+			createPasteExtension(this),
+			createLivePreviewStatusExtension(this),
+		]);
+		registerLinkRenderer(this);
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
+		this.registerEvent(this.app.vault.on("modify", (file) => {
+			void this.taskSync.handleVaultModify(file);
+		}));
+		this.registerEvent(this.app.workspace.on("file-open", (file) => {
+			if (file) {
+				void this.taskSync.syncFileFromLinear(file);
 			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+		}));
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-
+		this.registerCommands();
+		this.restartPolling();
 	}
 
-	onunload() {
+	override onunload(): void {
+		this.clearPolling();
 	}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+	async loadSettings(): Promise<void> {
+		const loaded = await this.loadData() as Partial<LinearPluginSettings> | null;
+		this.settings = sanitizeSettings(Object.assign({}, DEFAULT_SETTINGS, loaded ?? {}));
 	}
 
-	async saveSettings() {
+	async saveSettings(): Promise<void> {
+		this.settings = sanitizeSettings(this.settings);
 		await this.saveData(this.settings);
-	}
-}
-
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
+		this.restartPolling();
 	}
 
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
+	rememberPendingWorkspace(workspaceSlug: string): void {
+		if (!workspaceSlug) {
+			return;
+		}
+
+		this.pendingWorkspaceSlug = workspaceSlug.trim().toLowerCase();
 	}
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+	openSettingsForWorkspace(workspaceSlug?: string): void {
+		if (workspaceSlug) {
+			this.rememberPendingWorkspace(workspaceSlug);
+		}
+
+		const settings = (this.app as typeof this.app & {setting?: InternalAppSettings}).setting;
+		if (!settings) {
+			new Notice("Open settings and select this plugin to add a workspace token.");
+			return;
+		}
+
+		settings.open();
+		settings.openTabById(this.manifest.id);
+	}
+
+	async convertLinearUrlsToTasks(input: string): Promise<string> {
+		const parsedUrls = extractLinearIssueUrls(input);
+		if (parsedUrls.length === 0) {
+			return input;
+		}
+
+		const seeds: TaskSeed[] = [];
+		for (const parsedUrl of parsedUrls) {
+			try {
+				const issue = await this.client.fetchIssueByUrl(parsedUrl.normalizedUrl);
+				seeds.push({
+					identifier: issue.identifier,
+					title: issue.title,
+					url: issue.url,
+				});
+			} catch (error) {
+				if (error instanceof Error && "workspaceSlug" in error) {
+					this.rememberPendingWorkspace(String(error.workspaceSlug));
+				}
+
+				seeds.push({
+					identifier: parsedUrl.identifier,
+					title: "Linear issue",
+					url: parsedUrl.normalizedUrl,
+				});
+			}
+		}
+
+		return buildTasksFromSeeds(seeds, this.settings.taskFormat);
+	}
+
+	private registerCommands(): void {
+		this.addCommand({
+			id: "paste-linear-urls-as-tasks",
+			name: "Paste links as tasks",
+			editorCallback: async (editor: Editor) => {
+				const selection = editor.getSelection();
+				const source = selection || await navigator.clipboard.readText();
+				if (!source) {
+					new Notice("Copy one or more issue links first.");
+					return;
+				}
+
+				editor.replaceSelection(await this.convertLinearUrlsToTasks(source));
+			},
+		});
+
+		this.addCommand({
+			id: "refresh-linear-issue-statuses-current-file",
+			name: "Refresh linked issue statuses in current file",
+			callback: () => this.taskSync.syncCurrentFileFromLinear(),
+		});
+
+		this.addCommand({
+			id: "sync-linear-issue-statuses-vault",
+			name: "Sync linked issue statuses across vault",
+			callback: async () => {
+				new Notice("Syncing linked issue statuses across the vault...");
+				await this.taskSync.syncVaultFromLinear();
+				new Notice("Finished syncing linked issue statuses.");
+			},
+		});
+
+		this.addCommand({
+			id: "open-linear-workspace-settings",
+			name: "Open workspace settings",
+			callback: () => this.openSettingsForWorkspace(this.pendingWorkspaceSlug),
+		});
+	}
+
+	private restartPolling(): void {
+		this.clearPolling();
+
+		if (this.settings.pollIntervalMinutes <= 0) {
+			return;
+		}
+
+		this.pollIntervalId = window.setInterval(() => {
+			void this.taskSync.syncVaultFromLinear();
+		}, this.settings.pollIntervalMinutes * 60 * 1000);
+
+		this.registerInterval(this.pollIntervalId);
+	}
+
+	private clearPolling(): void {
+		if (this.pollIntervalId === null) {
+			return;
+		}
+
+		window.clearInterval(this.pollIntervalId);
+		this.pollIntervalId = null;
 	}
 }

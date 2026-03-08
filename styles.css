@@ -1,8 +1,111 @@
-/*
+.obsidian-linear-card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+	padding: 0.75rem;
+	margin: 0.35rem 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 12px;
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	text-decoration: none;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.obsidian-linear-card:hover {
+	border-color: var(--interactive-accent);
+	text-decoration: none;
+}
 
-If your plugin does not need CSS, delete this file.
+.obsidian-linear-card__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
 
-*/
+.obsidian-linear-card__workspace,
+.obsidian-linear-card__identifier,
+.obsidian-linear-card__status,
+.obsidian-linear-card__action,
+.obsidian-linear-settings-hint {
+	font-size: var(--font-ui-smaller);
+}
+
+.obsidian-linear-card__workspace,
+.obsidian-linear-card__identifier,
+.obsidian-linear-card__description,
+.obsidian-linear-card__action,
+.obsidian-linear-settings-hint {
+	color: var(--text-muted);
+}
+
+.obsidian-linear-card__status {
+	padding: 0.15rem 0.45rem;
+	border-radius: 999px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.obsidian-linear-card__title {
+	font-weight: 600;
+}
+
+.obsidian-linear-card--missing {
+	cursor: pointer;
+	border-style: dashed;
+}
+
+.obsidian-linear-inline-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.2rem;
+}
+
+.obsidian-linear-inline-status {
+	display: inline-flex;
+	width: 1em;
+	height: 1em;
+	margin-right: 0.2rem;
+	vertical-align: text-bottom;
+	color: var(--text-muted);
+}
+
+.obsidian-linear-inline-status svg {
+	width: 100%;
+	height: 100%;
+}
+
+.obsidian-linear-inline-status--active {
+	color: var(--interactive-accent);
+}
+
+.obsidian-linear-inline-status--success {
+	color: var(--color-green);
+}
+
+.obsidian-linear-inline-status--warning {
+	color: var(--color-orange);
+}
+
+.obsidian-linear-inline-status--muted,
+.obsidian-linear-inline-status--neutral {
+	color: var(--text-muted);
+}
+
+.obsidian-linear-inline-status--clickable {
+	cursor: pointer;
+}
+
+.obsidian-linear-inline-status--spin svg {
+	animation: obsidian-linear-spin 1.2s linear infinite;
+}
+
+@keyframes obsidian-linear-spin {
+	from {
+		transform: rotate(0deg);
+	}
+
+	to {
+		transform: rotate(360deg);
+	}
+}

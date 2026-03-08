@@ -46,9 +46,11 @@ export function createLivePreviewStatusExtension(plugin: ObsidianLinearPlugin): 
 		ViewPlugin.fromClass(class LivePreviewStatusPlugin {
 			private readonly statuses = new Map<string, StatusIconConfig>();
 			private readonly inFlight = new Set<string>();
+			private refreshScheduled = false;
 
 			constructor(private readonly view: EditorView) {
-				this.refresh();
+				plugin.registerLivePreviewView(view);
+				this.scheduleRefresh();
 			}
 
 			update(update: ViewUpdate): void {
@@ -59,8 +61,21 @@ export function createLivePreviewStatusExtension(plugin: ObsidianLinearPlugin): 
 					update.focusChanged ||
 					update.transactions.some((transaction) => transaction.effects.some((effect) => effect.is(forceLivePreviewStatusRefreshEffect)))
 				) {
-					this.refresh();
+					this.scheduleRefresh();
 				}
+			}
+
+			private scheduleRefresh(): void {
+				if (this.refreshScheduled) {
+					return;
+				}
+
+				this.refreshScheduled = true;
+				requestAnimationFrame(() => {
+					this.refreshScheduled = false;
+					this.refresh();
+					this.view.requestMeasure();
+				});
 			}
 
 			private refresh(): void {
@@ -76,7 +91,10 @@ export function createLivePreviewStatusExtension(plugin: ObsidianLinearPlugin): 
 						const match = getLivePreviewStatusMatch(line.text);
 						if (match) {
 							const issueKey = `${match.workspaceSlug}:${match.identifier.toUpperCase()}`;
-							const status = this.statuses.get(issueKey) ?? getLoadingStatusIcon();
+							const rememberedState = plugin.getRememberedIssueState(issueKey);
+							const status = rememberedState
+								? getIssueStatusIcon(rememberedState)
+								: this.statuses.get(issueKey) ?? getLoadingStatusIcon();
 							decorations.push(
 								Decoration.widget({
 									widget: new InlineStatusWidget(plugin, status, match.workspaceSlug),
@@ -104,7 +122,8 @@ export function createLivePreviewStatusExtension(plugin: ObsidianLinearPlugin): 
 			private async fetchStatus(issueKey: string, url: string, workspaceSlug: string): Promise<void> {
 				try {
 					const issue = await plugin.client.fetchIssueByUrl(url);
-					this.statuses.set(issueKey, getIssueStatusIcon(issue.state));
+					plugin.rememberIssueStatus(issue);
+					this.statuses.delete(issueKey);
 				} catch (error) {
 					if (error instanceof MissingWorkspaceTokenError) {
 						this.statuses.set(issueKey, getMissingConnectionStatusIcon());
@@ -113,7 +132,7 @@ export function createLivePreviewStatusExtension(plugin: ObsidianLinearPlugin): 
 					}
 				} finally {
 					this.inFlight.delete(issueKey);
-					this.refresh();
+					this.scheduleRefresh();
 				}
 			}
 
@@ -121,6 +140,10 @@ export function createLivePreviewStatusExtension(plugin: ObsidianLinearPlugin): 
 				this.view.dispatch({
 					effects: setDecorationsEffect.of(decorations),
 				});
+			}
+
+			destroy(): void {
+				plugin.unregisterLivePreviewView(this.view);
 			}
 		}),
 	];

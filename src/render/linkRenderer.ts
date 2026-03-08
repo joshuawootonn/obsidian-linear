@@ -65,6 +65,7 @@ class LinearIssueRenderChild extends MarkdownRenderChild {
 
 		try {
 			const issue = await this.plugin.client.fetchIssueByUrl(this.issueUrl);
+			this.plugin.rememberIssueStatus(issue);
 			const issueCard = this.buildIssueCard(issue);
 			loadingCard.replaceWith(issueCard);
 			this.containerEl = issueCard;
@@ -89,6 +90,7 @@ class LinearIssueRenderChild extends MarkdownRenderChild {
 
 		try {
 			const issue = await this.plugin.client.fetchIssueByUrl(this.issueUrl);
+			this.plugin.rememberIssueStatus(issue);
 			const inlineStatus = this.buildInlineStatus(getIssueStatusIcon(issue.state));
 			inlineStatus.setAttribute("aria-label", issue.state.name);
 			loadingStatus.replaceWith(inlineStatus);

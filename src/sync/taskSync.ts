@@ -65,6 +65,7 @@ export class TaskSyncService {
 					preferredCompletedStateName: this.plugin.settings.preferredCompletedStateName,
 					preferredReopenStateName: this.plugin.settings.preferredReopenStateName,
 				});
+				this.plugin.notifyIssueStatusChanged(updatedIssue);
 
 				if (updatedIssue.state.type !== "completed") {
 					this.lastOpenStateByIssueKey.set(task.issueKey, updatedIssue.state.id);
@@ -100,6 +101,7 @@ export class TaskSyncService {
 		for (const task of tasks) {
 			try {
 				const issue = await this.plugin.client.fetchIssueByUrl(task.url);
+				this.plugin.rememberIssueStatus(issue);
 				desiredCheckedStates.set(task.issueKey, issue.state.type === "completed");
 				if (issue.state.type !== "completed") {
 					this.lastOpenStateByIssueKey.set(task.issueKey, issue.state.id);

@@ -1,9 +1,11 @@
 import {Editor, Notice, Plugin} from "obsidian";
+import type {EditorView} from "@codemirror/view";
 import {createLivePreviewStatusExtension} from "./editor/livePreviewStatusExtension";
+import {forceLivePreviewStatusRefresh} from "./editor/livePreviewRefresh";
 import {createPasteExtension} from "./editor/pasteExtension";
 import {LinearClient} from "./linear/client";
-import type {TaskSeed} from "./linear/types";
-import {extractLinearIssueReferences} from "./linear/workspaces";
+import type {LinearIssue, LinearWorkflowState, TaskSeed} from "./linear/types";
+import {extractLinearIssueReferences, getIssueKey} from "./linear/workspaces";
 import {registerLinkRenderer} from "./render/linkRenderer";
 import {
 	DEFAULT_SETTINGS,
@@ -25,6 +27,8 @@ export default class ObsidianLinearPlugin extends Plugin {
 	taskSync: TaskSyncService;
 	pendingWorkspaceSlug?: string;
 	private pollIntervalId: number | null = null;
+	private readonly livePreviewViews = new Set<EditorView>();
+	private readonly issueStatesByKey = new Map<string, LinearWorkflowState>();
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -90,6 +94,33 @@ export default class ObsidianLinearPlugin extends Plugin {
 		settings.openTabById(this.manifest.id);
 	}
 
+	registerLivePreviewView(view: EditorView): void {
+		this.livePreviewViews.add(view);
+	}
+
+	unregisterLivePreviewView(view: EditorView): void {
+		this.livePreviewViews.delete(view);
+	}
+
+	rememberIssueStatus(issue: LinearIssue): void {
+		this.issueStatesByKey.set(getIssueKey(issue), issue.state);
+	}
+
+	getRememberedIssueState(issueKey: string): LinearWorkflowState | null {
+		return this.issueStatesByKey.get(issueKey) ?? null;
+	}
+
+	notifyIssueStatusChanged(issue: LinearIssue): void {
+		this.rememberIssueStatus(issue);
+		this.refreshLivePreviewStatuses();
+	}
+
+	refreshLivePreviewStatuses(): void {
+		for (const view of this.livePreviewViews) {
+			forceLivePreviewStatusRefresh(view);
+		}
+	}
+
 	async convertLinearUrlsToTasks(input: string): Promise<string> {
 		const parsedReferences = extractLinearIssueReferences(input);
 		if (parsedReferences.length === 0) {
@@ -100,6 +131,7 @@ export default class ObsidianLinearPlugin extends Plugin {
 		for (const parsedReference of parsedReferences) {
 			try {
 				const issue = await this.client.fetchIssueByUrl(parsedReference.normalizedUrl);
+				this.rememberIssueStatus(issue);
 				seeds.push({
 					identifier: issue.identifier,
 					title: issue.title,

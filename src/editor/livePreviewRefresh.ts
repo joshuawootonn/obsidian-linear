@@ -7,4 +7,5 @@ export function forceLivePreviewStatusRefresh(view: EditorView): void {
 	view.dispatch({
 		effects: forceLivePreviewStatusRefreshEffect.of(undefined),
 	});
+	view.requestMeasure();
 }

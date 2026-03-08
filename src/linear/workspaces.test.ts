@@ -79,4 +79,21 @@ describe("workspaces", () => {
 			},
 		]);
 	});
+
+	it("extracts multiple markdown-link references from a single line", () => {
+		const input = "- [TYP-37: Reach out to these people after the Google Classroom trial](https://linear.app/type-the-word/issue/TYP-37/reach-out-to-these-people-after-the-google-classroom-trial) - [TYP-56: When log tooltips go down the background is clipped by the following div](https://linear.app/type-the-word/issue/TYP-56/when-log-tooltips-go-down-the-background-is-clipped-by-the-following)";
+
+		const references = extractLinearIssueReferences(input);
+
+		expect(references.map(({identifier, title}) => ({identifier, title}))).toEqual([
+			{
+				identifier: "TYP-37",
+				title: "Reach out to these people after the Google Classroom trial",
+			},
+			{
+				identifier: "TYP-56",
+				title: "When log tooltips go down the background is clipped by the following div",
+			},
+		]);
+	});
 });

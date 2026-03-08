@@ -30,7 +30,7 @@ export function isSupportedLinearPasteInput(input: string): boolean {
 		.map((line) => line.trim())
 		.filter((line) => line.length > 0 && !isIgnorablePasteLine(line));
 
-	return meaningfulLines.length === references.length;
+	return meaningfulLines.every(isSupportedLinearReferenceLine);
 }
 
 async function handlePaste(plugin: ObsidianLinearPlugin, view: EditorView, clipboardText: string): Promise<void> {
@@ -53,4 +53,19 @@ async function handlePaste(plugin: ObsidianLinearPlugin, view: EditorView, clipb
 
 function isIgnorablePasteLine(line: string): boolean {
 	return line === "```";
+}
+
+function isSupportedLinearReferenceLine(line: string): boolean {
+	let remaining = line.trim();
+
+	while (remaining.length > 0) {
+		const match = remaining.match(/^(?:[-*]\s+)?(?:\[[^\]]+\]\((https:\/\/linear\.app\/[^\s)]+)\)|https:\/\/linear\.app\/[^\s)>\]]+)(?:\s+|$)/);
+		if (!match) {
+			return false;
+		}
+
+		remaining = remaining.slice(match[0].length).trimStart();
+	}
+
+	return true;
 }

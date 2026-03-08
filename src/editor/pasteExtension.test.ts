@@ -25,6 +25,12 @@ describe("pasteExtension", () => {
 		expect(isSupportedLinearPasteInput(input)).toBe(true);
 	});
 
+	it("supports multiple markdown-link bullets collapsed onto one line", () => {
+		const input = "- [TYP-37: Reach out to these people after the Google Classroom trial](https://linear.app/type-the-word/issue/TYP-37/reach-out-to-these-people-after-the-google-classroom-trial) - [TYP-56: When log tooltips go down the background is clipped by the following div](https://linear.app/type-the-word/issue/TYP-56/when-log-tooltips-go-down-the-background-is-clipped-by-the-following)";
+
+		expect(isSupportedLinearPasteInput(input)).toBe(true);
+	});
+
 	it("supports markdown-link bullet lists wrapped in fenced code blocks", () => {
 		const input = [
 			"```",

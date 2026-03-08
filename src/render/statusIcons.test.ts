@@ -41,7 +41,7 @@ describe("statusIcons", () => {
 			name: "In Review",
 			type: "started",
 		})).toMatchObject({
-			icon: "search",
+			icon: "message-square-more",
 			tone: "active",
 		});
 

@@ -2,6 +2,7 @@ import {EditorSelection} from "@codemirror/state";
 import {EditorView} from "@codemirror/view";
 import type ObsidianLinearPlugin from "../main";
 import {extractLinearIssueReferences} from "../linear/workspaces";
+import {forceLivePreviewStatusRefresh} from "./livePreviewRefresh";
 
 export function createPasteExtension(plugin: ObsidianLinearPlugin) {
 	return EditorView.domEventHandlers({
@@ -43,5 +44,9 @@ async function handlePaste(plugin: ObsidianLinearPlugin, view: EditorView, clipb
 			insert: replacement,
 		},
 		selection: EditorSelection.cursor(selection.from + replacement.length),
+	});
+
+	requestAnimationFrame(() => {
+		forceLivePreviewStatusRefresh(view);
 	});
 }

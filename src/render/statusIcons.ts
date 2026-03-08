@@ -28,7 +28,7 @@ export function getIssueStatusIcon(state: LinearWorkflowState): StatusIconConfig
 
 	if (/review|in review|qa|verify|verification/.test(normalizedName)) {
 		return {
-			icon: "search",
+			icon: "message-square-more",
 			label: state.name,
 			tone: "active",
 		};

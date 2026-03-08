@@ -1,4 +1,4 @@
-import {StateEffect, StateField} from "@codemirror/state";
+import {type Extension, StateEffect, StateField} from "@codemirror/state";
 import {
 	Decoration,
 	type DecorationSet,
@@ -11,6 +11,7 @@ import {Notice, setIcon} from "obsidian";
 import type ObsidianLinearPlugin from "../main";
 import {MissingWorkspaceTokenError} from "../linear/client";
 import {getLivePreviewStatusMatch} from "./livePreviewStatusMatches";
+import {forceLivePreviewStatusRefreshEffect} from "./livePreviewRefresh";
 import {
 	getErrorStatusIcon,
 	getIssueStatusIcon,
@@ -39,7 +40,7 @@ const livePreviewStatusField = StateField.define<DecorationSet>({
 	provide: (field) => EditorView.decorations.from(field),
 });
 
-export function createLivePreviewStatusExtension(plugin: ObsidianLinearPlugin) {
+export function createLivePreviewStatusExtension(plugin: ObsidianLinearPlugin): Extension {
 	return [
 		livePreviewStatusField,
 		ViewPlugin.fromClass(class LivePreviewStatusPlugin {
@@ -55,7 +56,8 @@ export function createLivePreviewStatusExtension(plugin: ObsidianLinearPlugin) {
 					update.docChanged ||
 					update.viewportChanged ||
 					update.selectionSet ||
-					update.focusChanged
+					update.focusChanged ||
+					update.transactions.some((transaction) => transaction.effects.some((effect) => effect.is(forceLivePreviewStatusRefreshEffect)))
 				) {
 					this.refresh();
 				}

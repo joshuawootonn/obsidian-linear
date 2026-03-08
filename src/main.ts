@@ -3,7 +3,7 @@ import {createLivePreviewStatusExtension} from "./editor/livePreviewStatusExtens
 import {createPasteExtension} from "./editor/pasteExtension";
 import {LinearClient} from "./linear/client";
 import type {TaskSeed} from "./linear/types";
-import {extractLinearIssueUrls} from "./linear/workspaces";
+import {extractLinearIssueReferences} from "./linear/workspaces";
 import {registerLinkRenderer} from "./render/linkRenderer";
 import {
 	DEFAULT_SETTINGS,
@@ -91,15 +91,15 @@ export default class ObsidianLinearPlugin extends Plugin {
 	}
 
 	async convertLinearUrlsToTasks(input: string): Promise<string> {
-		const parsedUrls = extractLinearIssueUrls(input);
-		if (parsedUrls.length === 0) {
+		const parsedReferences = extractLinearIssueReferences(input);
+		if (parsedReferences.length === 0) {
 			return input;
 		}
 
 		const seeds: TaskSeed[] = [];
-		for (const parsedUrl of parsedUrls) {
+		for (const parsedReference of parsedReferences) {
 			try {
-				const issue = await this.client.fetchIssueByUrl(parsedUrl.normalizedUrl);
+				const issue = await this.client.fetchIssueByUrl(parsedReference.normalizedUrl);
 				seeds.push({
 					identifier: issue.identifier,
 					title: issue.title,
@@ -111,9 +111,9 @@ export default class ObsidianLinearPlugin extends Plugin {
 				}
 
 				seeds.push({
-					identifier: parsedUrl.identifier,
-					title: "Linear issue",
-					url: parsedUrl.normalizedUrl,
+					identifier: parsedReference.identifier,
+					title: parsedReference.title ?? "Linear issue",
+					url: parsedReference.normalizedUrl,
 				});
 			}
 		}

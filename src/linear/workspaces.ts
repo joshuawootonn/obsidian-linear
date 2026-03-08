@@ -11,7 +11,13 @@ export interface ParsedLinearIdentifier {
 	issueNumber: number;
 }
 
+export interface ParsedLinearIssueReference extends ParsedLinearIssueUrl {
+	title: string | null;
+}
+
 const LINEAR_HOST = "linear.app";
+const LINEAR_URL_REGEX = /https:\/\/linear\.app\/[^\s)>\]]+/;
+const LINEAR_MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\((https:\/\/linear\.app\/[^\s)]+)\)/;
 
 export function normalizeWorkspaceSlug(workspaceSlug: string): string {
 	return workspaceSlug.trim().toLowerCase();
@@ -56,27 +62,35 @@ export function parseLinearIssueUrl(input: string): ParsedLinearIssueUrl | null 
 	};
 }
 
-export function extractLinearIssueUrls(input: string): ParsedLinearIssueUrl[] {
-	const matches = input.match(/https:\/\/linear\.app\/[^\s)>\]]+/g) ?? [];
+export function extractLinearIssueReferences(input: string): ParsedLinearIssueReference[] {
 	const seen = new Set<string>();
-	const urls: ParsedLinearIssueUrl[] = [];
+	const references: ParsedLinearIssueReference[] = [];
 
-	for (const match of matches) {
-		const parsed = parseLinearIssueUrl(match);
-		if (!parsed) {
+	for (const rawLine of input.split(/\r?\n/)) {
+		const line = rawLine.trim();
+		if (!line) {
 			continue;
 		}
 
-		const key = getIssueKey(parsed);
+		const reference = parseLinearIssueReferenceFromLine(line);
+		if (!reference) {
+			continue;
+		}
+
+		const key = getIssueKey(reference);
 		if (seen.has(key)) {
 			continue;
 		}
 
 		seen.add(key);
-		urls.push(parsed);
+		references.push(reference);
 	}
 
-	return urls;
+	return references;
+}
+
+export function extractLinearIssueUrls(input: string): ParsedLinearIssueUrl[] {
+	return extractLinearIssueReferences(input).map(({title: _title, ...url}) => url);
 }
 
 export function getIssueKey(parsed: Pick<ParsedLinearIssueUrl, "workspaceSlug" | "identifier">): string {
@@ -99,4 +113,57 @@ export function parseLinearIdentifier(identifier: string): ParsedLinearIdentifie
 		teamKey,
 		issueNumber: Number(issueNumber),
 	};
+}
+
+function parseLinearIssueReferenceFromLine(line: string): ParsedLinearIssueReference | null {
+	const markdownLinkMatch = line.match(LINEAR_MARKDOWN_LINK_REGEX);
+	if (markdownLinkMatch) {
+		const [, label, url] = markdownLinkMatch;
+		if (!label || !url) {
+			return null;
+		}
+
+		const parsed = parseLinearIssueUrl(url);
+		if (!parsed) {
+			return null;
+		}
+
+		return {
+			...parsed,
+			title: parseMarkdownLinkTitle(label, parsed.identifier),
+		};
+	}
+
+	const rawUrlMatch = line.match(LINEAR_URL_REGEX);
+	if (!rawUrlMatch) {
+		return null;
+	}
+
+	const parsed = parseLinearIssueUrl(rawUrlMatch[0]);
+	if (!parsed) {
+		return null;
+	}
+
+	return {
+		...parsed,
+		title: null,
+	};
+}
+
+function parseMarkdownLinkTitle(label: string, identifier: string): string | null {
+	const trimmedLabel = label.trim();
+	if (!trimmedLabel) {
+		return null;
+	}
+
+	const escapedIdentifier = identifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const withoutIdentifier = trimmedLabel
+		.replace(new RegExp(`^${escapedIdentifier}\\s*[:\\-–—]?\\s*`, "i"), "")
+		.trim();
+
+	if (withoutIdentifier) {
+		return withoutIdentifier;
+	}
+
+	return trimmedLabel.toUpperCase() === identifier ? null : trimmedLabel;
 }

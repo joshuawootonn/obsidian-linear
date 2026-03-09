@@ -46,13 +46,13 @@ pnpm install
 pnpm dev
 ```
 
-3. Install into a local vault:
+3. Store your local vault path and install into that vault:
 
 ```bash
-pnpm install:vault /absolute/path/to/your/vault
+pnpm setup-vault /absolute/path/to/your/vault
 ```
 
-The install script creates or updates:
+This stores the vault path in `.local/obsidian-vault.json` and creates or updates:
 
 ```text
 <vault>/.obsidian/plugins/obsidian-linear
@@ -61,7 +61,14 @@ The install script creates or updates:
 By default it symlinks the project folder into the vault for fast local iteration. Use `--copy` if you want to copy built artifacts instead:
 
 ```bash
-pnpm install:vault /absolute/path/to/your/vault --copy
+pnpm setup-vault /absolute/path/to/your/vault --copy
+```
+
+After that initial setup, you can re-install into the same saved vault without passing the path again:
+
+```bash
+pnpm install:vault
+pnpm install:vault --copy
 ```
 
 ## Commands

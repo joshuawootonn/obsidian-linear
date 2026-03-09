@@ -242,8 +242,8 @@ export class ObsidianLinearSettingTab extends PluginSettingTab {
 	private renderLocalTesting(containerEl: HTMLElement): void {
 		const vaultBasePath = this.getVaultBasePath();
 		const installCommand = vaultBasePath
-			? `pnpm install:vault ${quoteShellPath(vaultBasePath)}`
-			: "pnpm install:vault /absolute/path/to/your/vault";
+			? `pnpm setup-vault ${quoteShellPath(vaultBasePath)}`
+			: "pnpm setup-vault /absolute/path/to/your/vault";
 
 		new Setting(containerEl)
 			.setName("Vault path")
@@ -272,7 +272,7 @@ export class ObsidianLinearSettingTab extends PluginSettingTab {
 				}));
 
 		containerEl.createEl("p", {
-			text: "Run that command from the plugin project root to link or install this plugin into the current vault.",
+			text: "Run that command from the plugin project root to store this vault path locally and link or install the plugin into the current vault.",
 		});
 	}
 

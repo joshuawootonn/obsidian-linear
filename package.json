@@ -12,6 +12,7 @@
 		"lint": "eslint .",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"setup-vault": "node scripts/setup-local-vault.mjs",
 		"install:vault": "node scripts/install-local-vault.mjs"
 	},
 	"keywords": [],

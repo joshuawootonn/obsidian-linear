@@ -41,10 +41,14 @@ check:
 version:
   pnpm version
 
+# Store a local vault path and install into that vault by symlink.
+setup-vault vault:
+  pnpm setup-vault {{vault}}
+
 # Install into a local Obsidian vault by symlink.
-install-vault vault:
-  pnpm install:vault {{vault}}
+install-vault:
+  pnpm install:vault
 
 # Install into a local Obsidian vault by copying artifacts.
-install-vault-copy vault:
-  pnpm install:vault {{vault}} --copy
+install-vault-copy:
+  pnpm install:vault --copy

@@ -1,23 +1,30 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import {getProjectRoot, readStoredVaultPath} from "./local-vault-config.mjs";
 
 const args = process.argv.slice(2);
 const vaultArg = args.find((arg) => !arg.startsWith("--"));
 const copyMode = args.includes("--copy");
+const projectRoot = getProjectRoot(import.meta.url);
+const storedVaultPath = readStoredVaultPath(projectRoot);
+const resolvedVaultPath = vaultArg ? path.resolve(vaultArg) : storedVaultPath;
 
-if (!vaultArg) {
+if (!resolvedVaultPath) {
 	console.error("Usage: pnpm install:vault /absolute/path/to/vault [--copy]");
+	console.error("Or run: pnpm setup-vault /absolute/path/to/vault");
 	process.exit(1);
 }
 
-const projectRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const manifestPath = path.join(projectRoot, "manifest.json");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const pluginId = manifest.id;
 
-const vaultPath = path.resolve(vaultArg);
-const pluginRoot = path.join(vaultPath, ".obsidian", "plugins", pluginId);
+if (!fs.existsSync(resolvedVaultPath)) {
+	throw new Error(`Vault path does not exist: ${resolvedVaultPath}`);
+}
+
+const pluginRoot = path.join(resolvedVaultPath, ".obsidian", "plugins", pluginId);
 
 fs.mkdirSync(path.dirname(pluginRoot), {recursive: true});
 
@@ -27,6 +34,10 @@ if (copyMode) {
 } else {
 	installSymlink(projectRoot, pluginRoot);
 	console.log(`Symlinked ${pluginRoot} -> ${projectRoot}`);
+}
+
+if (!vaultArg && storedVaultPath) {
+	console.log(`Using stored vault path: ${storedVaultPath}`);
 }
 
 const buildArtifacts = ["manifest.json", "main.js", "styles.css"];

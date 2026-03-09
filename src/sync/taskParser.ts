@@ -16,6 +16,16 @@ export interface ParsedTaskReference {
 	identifier: string;
 }
 
+export interface TaskSnapshotEntry {
+	checked: boolean;
+	titleText: string;
+}
+
+export interface DesiredTaskState {
+	checked: boolean;
+	title: string;
+}
+
 const TASK_LINE_REGEX = /^(\s*[-*]\s+\[)([ xX])(\]\s+)(.*)$/;
 
 export function parseTaskReferences(markdown: string): ParsedTaskReference[] {
@@ -74,18 +84,20 @@ export function buildTasksFromSeeds(seeds: TaskSeed[], _format: TaskFormat): str
 	}).join("\n");
 }
 
-export function syncTaskCheckboxes(markdown: string, desiredCheckedByIssueKey: Map<string, boolean>): {changed: boolean; markdown: string} {
+export function syncTasksWithLinear(markdown: string, desiredTaskStateByIssueKey: Map<string, DesiredTaskState>): {changed: boolean; markdown: string} {
 	const lines = markdown.split(/\r?\n/);
 	const skippedLines = new Set<number>();
 	const replacements = new Map<number, string>();
 	let changed = false;
 
 	for (const task of parseTaskReferences(markdown)) {
-		const desiredChecked = desiredCheckedByIssueKey.get(task.issueKey) ?? task.checked;
+		const desiredState = desiredTaskStateByIssueKey.get(task.issueKey);
+		const desiredChecked = desiredState?.checked ?? task.checked;
+		const desiredTitle = desiredState?.title ?? task.titleText;
 		const normalizedLine = buildTaskLine({
 			checked: desiredChecked,
 			identifier: task.identifier,
-			title: task.titleText || task.identifier,
+			title: desiredTitle || task.identifier,
 			url: task.url,
 		});
 
@@ -127,8 +139,11 @@ export function syncTaskCheckboxes(markdown: string, desiredCheckedByIssueKey: M
 	};
 }
 
-export function createTaskSnapshot(tasks: ParsedTaskReference[]): Map<string, boolean> {
-	return new Map(tasks.map((task) => [task.issueKey, task.checked]));
+export function createTaskSnapshot(tasks: ParsedTaskReference[]): Map<string, TaskSnapshotEntry> {
+	return new Map(tasks.map((task) => [task.issueKey, {
+		checked: task.checked,
+		titleText: task.titleText,
+	}]));
 }
 
 export function buildTaskLine(task: {

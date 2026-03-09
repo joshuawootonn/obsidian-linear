@@ -58,6 +58,7 @@ export default class ObsidianLinearPlugin extends Plugin {
 
 	override onunload(): void {
 		this.clearPolling();
+		this.taskSync.cleanup();
 	}
 
 	async loadSettings(): Promise<void> {

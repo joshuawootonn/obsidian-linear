@@ -114,26 +114,15 @@ export class LinearClient {
 			throw new Error(`Could not determine a Linear workflow state for ${issue.identifier}.`);
 		}
 
-		await this.query<UpdateIssueResult>(
-			this.getRequiredToken(issue.workspaceSlug),
-			`
-				mutation UpdateIssueState($issueId: String!, $stateId: String!) {
-					issueUpdate(id: $issueId, input: { stateId: $stateId }) {
-						success
-						issue {
-							id
-						}
-					}
-				}
-			`,
-			{
-				issueId: issue.id,
-				stateId: targetState.id,
-			},
-		);
+		return this.updateIssue(url, {
+			stateId: targetState.id,
+		});
+	}
 
-		this.cache.delete(getIssueKey(issue));
-		return this.fetchIssueByUrl(url, true);
+	async setIssueTitle(url: string, title: string): Promise<LinearIssue> {
+		return this.updateIssue(url, {
+			title,
+		});
 	}
 
 	private async fetchIssueByIdentifier(workspaceSlug: string, identifier: string, fallbackUrl: string): Promise<LinearIssue> {
@@ -219,6 +208,33 @@ export class LinearClient {
 		}
 
 		return token;
+	}
+
+	private async updateIssue(url: string, input: {
+		stateId?: string;
+		title?: string;
+	}): Promise<LinearIssue> {
+		const issue = await this.fetchIssueByUrl(url, true);
+		await this.query<UpdateIssueResult>(
+			this.getRequiredToken(issue.workspaceSlug),
+			`
+				mutation UpdateIssue($issueId: String!, $input: IssueUpdateInput!) {
+					issueUpdate(id: $issueId, input: $input) {
+						success
+						issue {
+							id
+						}
+					}
+				}
+			`,
+			{
+				issueId: issue.id,
+				input,
+			},
+		);
+
+		this.cache.delete(getIssueKey(issue));
+		return this.fetchIssueByUrl(url, true);
 	}
 
 	private getTokenForWorkspace(workspaceSlug: string): string | null {

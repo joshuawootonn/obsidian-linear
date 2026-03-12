@@ -33,22 +33,24 @@ lint:
 
 # Run the same verification steps as CI.
 check:
-  pnpm build
-  pnpm test
-  pnpm lint
+  pnpm check
 
 # Bump plugin version metadata.
 version:
   pnpm version
 
-# Store a local vault path and install into that vault by symlink.
-setup-vault vault:
-  pnpm setup-vault {{vault}}
+# Store the vault path and switch to local build mode.
+setup-vault vault_path:
+  pnpm setup:vault "{{vault_path}}"
 
-# Install into a local Obsidian vault by symlink.
-install-vault:
-  pnpm install:vault
+# Show the current plugin source mode.
+plugin-status:
+  pnpm plugin:status
 
-# Install into a local Obsidian vault by copying artifacts.
-install-vault-copy:
-  pnpm install:vault --copy
+# Switch the configured vault to local build mode.
+use-local:
+  pnpm plugin:use-local
+
+# Switch the configured vault back to synced static mode.
+use-synced:
+  pnpm plugin:use-synced

@@ -46,30 +46,41 @@ pnpm install
 pnpm dev
 ```
 
-3. Store your local vault path and install into that vault:
+3. Configure your local vault and switch it to local build mode:
 
 ```bash
-pnpm setup-vault /absolute/path/to/your/vault
+pnpm setup:vault /absolute/path/to/your/vault
 ```
 
-This stores the vault path in `.local/obsidian-vault.json` and creates or updates:
+This stores the vault path in `.obsidian-dev.json` and points:
 
 ```text
 <vault>/.obsidian/plugins/obsidian-linear
 ```
 
-By default it symlinks the project folder into the vault for fast local iteration. Use `--copy` if you want to copy built artifacts instead:
+at this repo-local plugin output folder:
 
-```bash
-pnpm setup-vault /absolute/path/to/your/vault --copy
+```text
+<repo>/.obsidian/plugins/obsidian-linear
 ```
 
-After that initial setup, you can re-install into the same saved vault without passing the path again:
+## Local vs Synced Mode
+
+- Local build mode: `<vault>/.obsidian/plugins/<plugin-id>` is a symlink to `<repo>/.obsidian/plugins/<plugin-id>`, so local builds from this repo are what Obsidian loads.
+- Synced static mode: `<vault>/.obsidian/plugins/<plugin-id>` is restored to a normal directory so Obsidian Sync can manage it again.
+- When switching away from a real synced plugin folder, backups are stored under `<vault>/.obsidian/plugin-backups/<plugin-id>/`.
+
+Use these commands:
 
 ```bash
-pnpm install:vault
-pnpm install:vault --copy
+just setup-vault /abs/vault/path
+just dev
+just plugin-status
+just use-local
+just use-synced
 ```
+
+`just setup-vault /abs/vault/path` saves the vault path in `.obsidian-dev.json`. After that, `just plugin-status`, `just use-local`, and `just use-synced` use the saved path automatically.
 
 ## Commands
 

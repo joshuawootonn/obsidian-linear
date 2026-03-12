@@ -12,6 +12,11 @@
 		"lint": "eslint .",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"check": "pnpm build && pnpm test && pnpm lint",
+		"setup:vault": "node scripts/setup-vault.mjs",
+		"plugin:status": "node scripts/plugin-source.mjs status",
+		"plugin:use-local": "node scripts/plugin-source.mjs use-local",
+		"plugin:use-synced": "node scripts/plugin-source.mjs use-synced",
 		"setup-vault": "node scripts/setup-local-vault.mjs",
 		"install:vault": "node scripts/install-local-vault.mjs"
 	},

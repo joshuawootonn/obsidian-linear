@@ -93,6 +93,25 @@ describe("taskParser", () => {
 		});
 	});
 
+	it("preserves a regular task immediately before an inline Linear task", () => {
+		const original = [
+			"- [ ] Buy groceries",
+			"- [ ] [TYP-37](https://linear.app/type-the-word/issue/TYP-37/reach-out) Reach out",
+		].join("\n");
+
+		const synced = syncTasksWithLinear(original, new Map([
+			["type-the-word:TYP-37", {
+				checked: true,
+				title: "Reach out to these people",
+			}],
+		]));
+
+		expect(synced.markdown).toBe([
+			"- [ ] Buy groceries",
+			"- [x] [TYP-37](https://linear.app/type-the-word/issue/TYP-37/reach-out) Reach out to these people",
+		].join("\n"));
+	});
+
 	it("builds a normalized inline task line", () => {
 		expect(buildTaskLine({
 			checked: true,

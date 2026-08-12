@@ -44,7 +44,7 @@ export function parseTaskReferences(markdown: string): ParsedTaskReference[] {
 		}
 
 		const inlineIssue = parseLinearIssueFromLine(line);
-		const nextLineIssue = inlineIssue ? null : parseLinearIssueFromLine(lines[index + 1] ?? "");
+		const nextLineIssue = inlineIssue ? null : parseStandaloneLinearIssueUrl(lines[index + 1] ?? "");
 		const issue = inlineIssue ?? nextLineIssue;
 		if (!issue) {
 			continue;
@@ -159,6 +159,10 @@ export function buildTaskLine(task: {
 function parseLinearIssueFromLine(line: string): ReturnType<typeof parseLinearIssueUrl> {
 	const matches = extractLinearIssueUrls(line);
 	return matches[0] ?? null;
+}
+
+function parseStandaloneLinearIssueUrl(line: string): ReturnType<typeof parseLinearIssueUrl> {
+	return parseLinearIssueUrl(line.trim());
 }
 
 function extractTaskTitle(displayText: string): string {

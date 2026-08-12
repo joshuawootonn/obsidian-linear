@@ -112,6 +112,44 @@ describe("taskParser", () => {
 		].join("\n"));
 	});
 
+	it("preserves a regular task immediately after an inline Linear task", () => {
+		const original = [
+			"- [ ] [TYP-37](https://linear.app/type-the-word/issue/TYP-37/reach-out) Reach out",
+			"- [ ] Buy groceries",
+		].join("\n");
+
+		const synced = syncTasksWithLinear(original, new Map([
+			["type-the-word:TYP-37", {
+				checked: true,
+				title: "Reach out to these people",
+			}],
+		]));
+
+		expect(synced.markdown).toBe([
+			"- [x] [TYP-37](https://linear.app/type-the-word/issue/TYP-37/reach-out) Reach out to these people",
+			"- [ ] Buy groceries",
+		].join("\n"));
+	});
+
+	it("preserves an indented regular task beneath an inline Linear task", () => {
+		const original = [
+			"- [ ] [TYP-37](https://linear.app/type-the-word/issue/TYP-37/reach-out) Reach out",
+			"  - [ ] Buy groceries",
+		].join("\n");
+
+		const synced = syncTasksWithLinear(original, new Map([
+			["type-the-word:TYP-37", {
+				checked: true,
+				title: "Reach out to these people",
+			}],
+		]));
+
+		expect(synced.markdown).toBe([
+			"- [x] [TYP-37](https://linear.app/type-the-word/issue/TYP-37/reach-out) Reach out to these people",
+			"  - [ ] Buy groceries",
+		].join("\n"));
+	});
+
 	it("builds a normalized inline task line", () => {
 		expect(buildTaskLine({
 			checked: true,

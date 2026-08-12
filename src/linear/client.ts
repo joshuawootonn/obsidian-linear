@@ -7,7 +7,28 @@ import {getIssueKey, parseLinearIdentifier, parseLinearIssueUrl} from "./workspa
 
 interface GraphQLResponse<T> {
 	data?: T;
-	errors?: Array<{message: string}>;
+	errors?: Array<{
+		extensions?: {
+			code?: string;
+		};
+		message: string;
+	}>;
+}
+
+interface IssueNode {
+	id: string;
+	identifier: string;
+	title: string;
+	url: string;
+	state: LinearWorkflowState;
+	team: {
+		id: string;
+		key: string;
+		name: string;
+		states: {
+			nodes: LinearWorkflowState[];
+		};
+	};
 }
 
 interface IssueQueryResult {
@@ -16,21 +37,7 @@ interface IssueQueryResult {
 			id: string;
 			key: string;
 			issues: {
-				nodes: Array<{
-					id: string;
-					identifier: string;
-					title: string;
-					url: string;
-					state: LinearWorkflowState;
-					team: {
-						id: string;
-						key: string;
-						name: string;
-						states: {
-							nodes: LinearWorkflowState[];
-						};
-					};
-				}>;
+				nodes: IssueNode[];
 			};
 		}>;
 	};
@@ -39,11 +46,12 @@ interface IssueQueryResult {
 interface UpdateIssueResult {
 	issueUpdate: {
 		success: boolean;
-		issue: {
-			id: string;
-		} | null;
+		issue: IssueNode | null;
 	};
 }
+
+const ISSUE_CACHE_TTL_MS = 30 * 60_000;
+const DEFAULT_RATE_LIMIT_PAUSE_MS = 60 * 60_000;
 
 export class MissingWorkspaceTokenError extends Error {
 	constructor(readonly workspaceSlug: string) {
@@ -52,9 +60,17 @@ export class MissingWorkspaceTokenError extends Error {
 	}
 }
 
+export class LinearRateLimitError extends Error {
+	constructor(readonly retryAt: number) {
+		super(`Linear API rate limit reached. Sync is paused until ${new Date(retryAt).toLocaleTimeString()}.`);
+		this.name = "LinearRateLimitError";
+	}
+}
+
 export class LinearClient {
-	private readonly cache = new IssueCache<LinearIssue>(60_000);
+	private readonly cache = new IssueCache<LinearIssue>(ISSUE_CACHE_TTL_MS);
 	private readonly inflight = new Map<string, Promise<LinearIssue>>();
+	private rateLimitedUntil = 0;
 
 	constructor(private readonly getSettings: () => LinearPluginSettings) {}
 
@@ -69,15 +85,15 @@ export class LinearClient {
 		}
 
 		const issueKey = getIssueKey(parsed);
+		const inflightRequest = this.inflight.get(issueKey);
+		if (inflightRequest) {
+			return inflightRequest;
+		}
+
 		if (!force) {
 			const cachedIssue = this.cache.get(issueKey);
 			if (cachedIssue) {
 				return cachedIssue;
-			}
-
-			const inflightRequest = this.inflight.get(issueKey);
-			if (inflightRequest) {
-				return inflightRequest;
 			}
 		}
 
@@ -100,7 +116,7 @@ export class LinearClient {
 			preferredReopenStateName?: string;
 		},
 	): Promise<LinearIssue> {
-		const issue = await this.fetchIssueByUrl(url, true);
+		const issue = await this.fetchIssueByUrl(url);
 		const targetState = checked
 			? resolveCompletedState(issue.team, options.preferredCompletedStateName)
 			: resolveReopenState(
@@ -114,13 +130,14 @@ export class LinearClient {
 			throw new Error(`Could not determine a Linear workflow state for ${issue.identifier}.`);
 		}
 
-		return this.updateIssue(url, {
+		return this.updateIssue(issue, {
 			stateId: targetState.id,
 		});
 	}
 
 	async setIssueTitle(url: string, title: string): Promise<LinearIssue> {
-		return this.updateIssue(url, {
+		const issue = await this.fetchIssueByUrl(url);
+		return this.updateIssue(issue, {
 			title,
 		});
 	}
@@ -180,22 +197,7 @@ export class LinearClient {
 			throw new Error(`Linear issue ${identifier} was not found in workspace "${workspaceSlug}".`);
 		}
 
-		const team: LinearTeam = {
-			id: issueNode.team.id,
-			key: issueNode.team.key,
-			name: issueNode.team.name,
-			states: issueNode.team.states.nodes,
-		};
-
-		const issue: LinearIssue = {
-			id: issueNode.id,
-			identifier: issueNode.identifier,
-			title: issueNode.title,
-			url: issueNode.url || fallbackUrl,
-			workspaceSlug,
-			state: issueNode.state,
-			team,
-		};
+		const issue = toLinearIssue(issueNode, workspaceSlug, fallbackUrl);
 
 		this.cache.set(getIssueKey(issue), issue);
 		return issue;
@@ -210,12 +212,11 @@ export class LinearClient {
 		return token;
 	}
 
-	private async updateIssue(url: string, input: {
+	private async updateIssue(issue: LinearIssue, input: {
 		stateId?: string;
 		title?: string;
 	}): Promise<LinearIssue> {
-		const issue = await this.fetchIssueByUrl(url, true);
-		await this.query<UpdateIssueResult>(
+		const result = await this.query<UpdateIssueResult>(
 			this.getRequiredToken(issue.workspaceSlug),
 			`
 				mutation UpdateIssue($issueId: String!, $input: IssueUpdateInput!) {
@@ -223,6 +224,26 @@ export class LinearClient {
 						success
 						issue {
 							id
+							identifier
+							title
+							url
+							state {
+								id
+								name
+								type
+							}
+							team {
+								id
+								key
+								name
+								states {
+									nodes {
+										id
+										name
+										type
+									}
+								}
+							}
 						}
 					}
 				}
@@ -233,8 +254,13 @@ export class LinearClient {
 			},
 		);
 
-		this.cache.delete(getIssueKey(issue));
-		return this.fetchIssueByUrl(url, true);
+		if (!result.issueUpdate.success || !result.issueUpdate.issue) {
+			throw new Error(`Linear did not update ${issue.identifier}.`);
+		}
+
+		const updatedIssue = toLinearIssue(result.issueUpdate.issue, issue.workspaceSlug, issue.url);
+		this.cache.set(getIssueKey(updatedIssue), updatedIssue);
+		return updatedIssue;
 	}
 
 	private getTokenForWorkspace(workspaceSlug: string): string | null {
@@ -247,6 +273,11 @@ export class LinearClient {
 	}
 
 	private async query<T>(token: string, query: string, variables: Record<string, unknown>): Promise<T> {
+		if (Date.now() < this.rateLimitedUntil) {
+			throw new LinearRateLimitError(this.rateLimitedUntil);
+		}
+
+		const operationName = extractOperationName(query);
 		const response = await requestUrl({
 			url: "https://api.linear.app/graphql",
 			method: "POST",
@@ -258,17 +289,107 @@ export class LinearClient {
 				query,
 				variables,
 			}),
+			throw: false,
 		});
 
-		const payload = response.json as GraphQLResponse<T>;
-		if (payload.errors?.length) {
-			throw new Error(payload.errors.map((error) => error.message).join("; "));
+		let payload: GraphQLResponse<T> | undefined;
+		try {
+			payload = response.json as GraphQLResponse<T>;
+		} catch {
+			payload = undefined;
 		}
 
-		if (!payload.data) {
+		const rateLimitReset = parseRateLimitReset(getResponseHeader(response.headers, "x-ratelimit-requests-reset"));
+		const rateLimitRemaining = Number(getResponseHeader(response.headers, "x-ratelimit-requests-remaining"));
+		const isRateLimited = (
+			response.status === 429 ||
+			payload?.errors?.some((error) => (
+				error.extensions?.code === "RATELIMITED" ||
+				error.message.toLowerCase().includes("rate limit")
+			)) === true
+		);
+
+		if (isRateLimited) {
+			this.rateLimitedUntil = rateLimitReset ?? Date.now() + DEFAULT_RATE_LIMIT_PAUSE_MS;
+			throw new LinearRateLimitError(this.rateLimitedUntil);
+		}
+
+		if (
+			rateLimitReset &&
+			Number.isFinite(rateLimitRemaining) &&
+			rateLimitRemaining <= 0
+		) {
+			this.rateLimitedUntil = rateLimitReset;
+		}
+
+		if (response.status >= 400 || payload?.errors?.length) {
+			const messages = payload?.errors?.map((error) => error.message).join("; ");
+			console.error("[obsidian-linear] Linear API request failed", {
+				operationName,
+				status: response.status,
+				variables,
+				errors: payload?.errors,
+				body: response.text,
+			});
+			throw new Error(
+				messages
+					? `Linear API error (${operationName}, status ${response.status}): ${messages}`
+					: `Linear API request failed (${operationName}) with status ${response.status}.`,
+			);
+		}
+
+		if (!payload?.data) {
+			console.error("[obsidian-linear] Linear API returned no data", {
+				operationName,
+				status: response.status,
+				body: response.text,
+			});
 			throw new Error("Linear API returned no data.");
 		}
 
 		return payload.data;
 	}
+}
+
+function extractOperationName(query: string): string {
+	const match = query.match(/(?:query|mutation)\s+([A-Za-z0-9_]+)/);
+	return match?.[1] ?? "anonymous";
+}
+
+function getResponseHeader(headers: Record<string, string>, name: string): string | undefined {
+	const normalizedName = name.toLowerCase();
+	const matchingHeader = Object.entries(headers).find(([key]) => key.toLowerCase() === normalizedName);
+	return matchingHeader?.[1];
+}
+
+function parseRateLimitReset(value: string | undefined): number | null {
+	if (!value) {
+		return null;
+	}
+
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed) || parsed <= Date.now()) {
+		return null;
+	}
+
+	return parsed;
+}
+
+function toLinearIssue(issueNode: IssueNode, workspaceSlug: string, fallbackUrl: string): LinearIssue {
+	const team: LinearTeam = {
+		id: issueNode.team.id,
+		key: issueNode.team.key,
+		name: issueNode.team.name,
+		states: issueNode.team.states.nodes,
+	};
+
+	return {
+		id: issueNode.id,
+		identifier: issueNode.identifier,
+		title: issueNode.title,
+		url: issueNode.url || fallbackUrl,
+		workspaceSlug,
+		state: issueNode.state,
+		team,
+	};
 }

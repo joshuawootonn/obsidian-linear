@@ -1,6 +1,7 @@
 import {Notice, TAbstractFile, TFile} from "obsidian";
 import type ObsidianLinearPlugin from "../main";
-import {MissingWorkspaceTokenError} from "../linear/client";
+import {LinearRateLimitError, MissingWorkspaceTokenError} from "../linear/client";
+import type {LinearIssue} from "../linear/types";
 import {createTaskSnapshot, parseTaskReferences, syncTasksWithLinear, type TaskSnapshotEntry} from "./taskParser";
 
 const SELF_MANAGED_WRITE_WINDOW_MS = 2_000;
@@ -18,6 +19,8 @@ export class TaskSyncService {
 	private readonly snapshotsByPath = new Map<string, Map<string, TaskSnapshotEntry>>();
 	private readonly lastOpenStateByIssueKey = new Map<string, string>();
 	private readonly pendingTitleSyncs = new Map<string, PendingTitleSync>();
+	private activeVaultSync: Promise<void> | null = null;
+	private rateLimitNoticeUntil = 0;
 
 	constructor(private readonly plugin: ObsidianLinearPlugin) {}
 
@@ -40,9 +43,29 @@ export class TaskSyncService {
 	}
 
 	async syncVaultFromLinear(): Promise<void> {
+		if (this.activeVaultSync) {
+			return this.activeVaultSync;
+		}
+
+		const sync = this.runVaultSync();
+		this.activeVaultSync = sync;
+
+		try {
+			await sync;
+		} finally {
+			if (this.activeVaultSync === sync) {
+				this.activeVaultSync = null;
+			}
+		}
+	}
+
+	private async runVaultSync(): Promise<void> {
 		const markdownFiles = this.plugin.app.vault.getMarkdownFiles();
 		for (const file of markdownFiles) {
-			await this.syncFileFromLinear(file, true);
+			const completed = await this.syncFileFromLinear(file);
+			if (!completed) {
+				return;
+			}
 		}
 	}
 
@@ -96,28 +119,35 @@ export class TaskSyncService {
 		}
 	}
 
-	async syncFileFromLinear(file: TFile, force = false): Promise<void> {
+	async syncFileFromLinear(file: TFile, force = false): Promise<boolean> {
 		if (file.extension !== "md") {
-			return;
+			return true;
 		}
 
 		const markdown = await this.plugin.app.vault.cachedRead(file);
 		if (!markdown.includes("linear.app/")) {
 			this.snapshotsByPath.delete(file.path);
 			this.clearPendingTitleSyncsForFile(file.path);
-			return;
+			return true;
 		}
 
 		const tasks = parseTaskReferences(markdown);
 		if (tasks.length === 0) {
 			this.snapshotsByPath.set(file.path, new Map());
-			return;
+			return true;
 		}
 
 		const desiredTaskStates = new Map<string, {checked: boolean; title: string}>();
+		const issuesByKey = new Map<string, Promise<LinearIssue>>();
 		for (const task of tasks) {
 			try {
-				const issue = await this.plugin.client.fetchIssueByUrl(task.url, force);
+				let issueRequest = issuesByKey.get(task.issueKey);
+				if (!issueRequest) {
+					issueRequest = this.plugin.client.fetchIssueByUrl(task.url, force);
+					issuesByKey.set(task.issueKey, issueRequest);
+				}
+
+				const issue = await issueRequest;
 				this.plugin.rememberIssueStatus(issue);
 				desiredTaskStates.set(task.issueKey, {
 					checked: issue.state.type === "completed",
@@ -133,7 +163,16 @@ export class TaskSyncService {
 					continue;
 				}
 
-				console.error("Obsidian Linear sync failed", error);
+				if (error instanceof LinearRateLimitError) {
+					this.notifyRateLimit(error);
+					return false;
+				}
+
+				console.error("Obsidian Linear sync failed", {
+					url: task.url,
+					identifier: task.identifier,
+					error,
+				});
 			}
 		}
 
@@ -144,6 +183,7 @@ export class TaskSyncService {
 		}
 
 		this.snapshotsByPath.set(file.path, createTaskSnapshot(parseTaskReferences(result.markdown)));
+		return true;
 	}
 
 	private async syncTaskCheckedState(task: {
@@ -239,6 +279,20 @@ export class TaskSyncService {
 			return;
 		}
 
+		if (error instanceof LinearRateLimitError) {
+			this.notifyRateLimit(error);
+			return;
+		}
+
 		new Notice(error instanceof Error ? error.message : fallbackMessage);
+	}
+
+	private notifyRateLimit(error: LinearRateLimitError): void {
+		if (this.rateLimitNoticeUntil === error.retryAt) {
+			return;
+		}
+
+		this.rateLimitNoticeUntil = error.retryAt;
+		new Notice(error.message);
 	}
 }

@@ -20,7 +20,7 @@ export interface LinearPluginSettings {
 
 export const DEFAULT_SETTINGS: LinearPluginSettings = {
 	connections: [],
-	pollIntervalMinutes: 5,
+	pollIntervalMinutes: 30,
 	taskFormat: "two-line",
 	preferredCompletedStateName: "Done",
 	preferredReopenStateName: "Backlog",
@@ -84,6 +84,8 @@ export class ObsidianLinearSettingTab extends PluginSettingTab {
 				.addOption("1", "1 minute")
 				.addOption("5", "5 minutes")
 				.addOption("15", "15 minutes")
+				.addOption("30", "30 minutes")
+				.addOption("60", "1 hour")
 				.setValue(String(this.plugin.settings.pollIntervalMinutes))
 				.onChange(async (value) => {
 					this.plugin.settings.pollIntervalMinutes = Number(value);

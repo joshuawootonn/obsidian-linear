@@ -93,7 +93,8 @@ just use-synced
 
 - Checked tasks are pushed to a completed Linear workflow state.
 - Unchecked tasks reopen the issue using the last known open state when possible.
-- Polling defaults to every 5 minutes and can be turned off in settings.
+- Polling defaults to every 30 minutes and can be turned off in settings.
+- Issue reads are cached for 30 minutes, overlapping vault syncs are coalesced, and background sync pauses automatically when Linear reports an exhausted rate limit.
 - Manual refresh commands are available if you want to avoid background polling.
 - Opening a note refreshes linked issues in that file automatically.
 - In Reading view and Live Preview, linked tasks render a status icon inline before the issue ID without changing the Markdown source.

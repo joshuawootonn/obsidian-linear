@@ -3,6 +3,7 @@ import type ObsidianLinearPlugin from "../main";
 import type {LinearDayIssue, LinearWorkflowState} from "../linear/types";
 import {getIssueStatusIcon, renderStatusIcon} from "../render/statusIcons";
 import type {DaySnapshot, DaySnapshotIdentity, DaySnapshotIssue} from "./snapshots";
+import {getVisiblePlannedIssues} from "./viewState";
 
 const DAY_VIEW_REFRESH_MS = 5 * 60_000;
 const DEFAULT_DAY_STATUS = "Today";
@@ -142,7 +143,7 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 		const liveById = new Map(
 			[...dayIssues, ...capturedLiveIssues].map((issue) => [issue.id, issue]),
 		);
-		const planned = Object.values(snapshot?.issues ?? {});
+		const planned = getVisiblePlannedIssues(Object.values(snapshot?.issues ?? {}), liveById);
 		const completed = dayIssues.filter((issue) => completedDuring(issue, config));
 		const snapshotIdentity = toSnapshotIdentity(config);
 
@@ -152,18 +153,13 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 			(entry) => this.renderPlannedIssue(entry, liveById.get(entry.id), snapshotIdentity),
 			`No issues have been observed in ${config.statusName} for this day.`,
 		);
-		this.renderSection(
-			"Completed",
-			completed,
-			(issue) => this.renderLiveIssue(issue, completionTime(issue.completedAt)),
-			"No assigned issues were completed on this day.",
-		);
-
-		if (config.isCurrentDay) {
-			this.containerEl.createDiv({
-				cls: "obsidian-linear-day__footnote",
-				text: "Plan membership is historical. Current statuses refresh every five minutes while this view is open.",
-			});
+		if (completed.length > 0) {
+			this.renderSection(
+				"Completed",
+				completed,
+				(issue) => this.renderLiveIssue(issue, completionTime(issue.completedAt)),
+				"",
+			);
 		}
 	}
 
@@ -242,11 +238,9 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 			cls: "obsidian-linear-day__issue-link",
 			href: issue.url,
 		});
-		const content = link.createDiv({cls: "obsidian-linear-day__issue-content"});
-		content.createDiv({cls: "obsidian-linear-day__issue-title", text: issue.title});
-		const details = content.createDiv({cls: "obsidian-linear-day__issue-details"});
-		details.createSpan({text: issue.identifier});
-		details.createSpan({text: issue.subtitle});
+		link.createSpan({cls: "obsidian-linear-day__issue-identifier", text: issue.identifier});
+		link.createSpan({cls: "obsidian-linear-day__issue-title", text: issue.title});
+		link.createSpan({cls: "obsidian-linear-day__issue-subtitle", text: issue.subtitle});
 
 		const externalIcon = link.createSpan({cls: "obsidian-linear-day__external-icon"});
 		setIcon(externalIcon, "arrow-up-right");

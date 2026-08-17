@@ -1,4 +1,4 @@
-import {MarkdownRenderChild, Notice, parseYaml, setIcon} from "obsidian";
+import {MarkdownRenderChild, Menu, Notice, parseYaml, setIcon} from "obsidian";
 import type ObsidianLinearPlugin from "../main";
 import type {LinearDayIssue, LinearWorkflowState} from "../linear/types";
 import {getIssueStatusIcon, renderStatusIcon} from "../render/statusIcons";
@@ -126,11 +126,12 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 		const liveById = new Map(liveIssues.map((issue) => [issue.id, issue]));
 		const planned = Object.values(snapshot?.issues ?? {});
 		const completed = liveIssues.filter((issue) => completedDuring(issue, config));
+		const snapshotIdentity = toSnapshotIdentity(config);
 
 		this.renderSection(
 			`${config.statusName} plan`,
 			planned,
-			(entry) => this.renderPlannedIssue(entry, liveById.get(entry.id)),
+			(entry) => this.renderPlannedIssue(entry, liveById.get(entry.id), snapshotIdentity),
 			`No issues have been observed in ${config.statusName} for this day.`,
 		);
 		this.renderSection(
@@ -170,11 +171,17 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 		}
 	}
 
-	private renderPlannedIssue(snapshotIssue: DaySnapshotIssue, liveIssue: LinearDayIssue | undefined): HTMLElement {
+	private renderPlannedIssue(
+		snapshotIssue: DaySnapshotIssue,
+		liveIssue: LinearDayIssue | undefined,
+		snapshotIdentity: DaySnapshotIdentity,
+	): HTMLElement {
 		return this.buildIssueRow({
 			identifier: snapshotIssue.identifier,
+			snapshotIdentity,
 			state: liveIssue?.state ?? snapshotIssue.state,
-			subtitle: liveIssue ? liveIssue.state.name : `Captured ${formatCaptureTime(snapshotIssue.firstSeenAt)}`,
+			states: liveIssue?.team.states,
+			subtitle: `Captured ${formatCaptureTime(snapshotIssue.firstSeenAt)}`,
 			title: liveIssue?.title ?? snapshotIssue.title,
 			url: liveIssue?.url ?? snapshotIssue.url,
 		});
@@ -184,6 +191,7 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 		return this.buildIssueRow({
 			identifier: issue.identifier,
 			state: issue.state,
+			states: issue.team.states,
 			subtitle,
 			title: issue.title,
 			url: issue.url,
@@ -192,29 +200,121 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 
 	private buildIssueRow(issue: {
 		identifier: string;
+		snapshotIdentity?: DaySnapshotIdentity;
 		state: LinearWorkflowState;
+		states?: LinearWorkflowState[];
 		subtitle: string;
 		title: string;
 		url: string;
 	}): HTMLElement {
-		const row = document.createElement("a");
+		const row = document.createElement("div");
 		row.className = "obsidian-linear-day__issue";
-		row.href = issue.url;
-		row.setAttribute("target", "_blank");
-		row.setAttribute("rel", "noopener noreferrer");
 
-		const icon = row.createSpan({cls: "obsidian-linear-day__status-icon"});
-		renderStatusIcon(icon, getIssueStatusIcon(issue.state));
+		const statusButton = row.createEl("button", {
+			attr: {"aria-label": `Change status from ${issue.state.name}`},
+			cls: "obsidian-linear-day__status-button",
+		});
+		this.renderStatusButton(statusButton, issue.state);
+		statusButton.addEventListener("click", () => {
+			void this.openStatusMenu(statusButton, issue);
+		});
 
-		const content = row.createDiv({cls: "obsidian-linear-day__issue-content"});
+		const link = row.createEl("a", {
+			attr: {rel: "noopener noreferrer", target: "_blank"},
+			cls: "obsidian-linear-day__issue-link",
+			href: issue.url,
+		});
+		const content = link.createDiv({cls: "obsidian-linear-day__issue-content"});
 		content.createDiv({cls: "obsidian-linear-day__issue-title", text: issue.title});
 		const details = content.createDiv({cls: "obsidian-linear-day__issue-details"});
 		details.createSpan({text: issue.identifier});
 		details.createSpan({text: issue.subtitle});
 
-		const externalIcon = row.createSpan({cls: "obsidian-linear-day__external-icon"});
+		const externalIcon = link.createSpan({cls: "obsidian-linear-day__external-icon"});
 		setIcon(externalIcon, "arrow-up-right");
 		return row;
+	}
+
+	private renderStatusButton(button: HTMLButtonElement, state: LinearWorkflowState): void {
+		button.empty();
+		button.setAttribute("aria-label", `Change status from ${state.name}`);
+		const icon = button.createSpan({cls: "obsidian-linear-day__status-icon"});
+		renderStatusIcon(icon, getIssueStatusIcon(state));
+		button.createSpan({cls: "obsidian-linear-day__status-label", text: state.name});
+		const chevron = button.createSpan({cls: "obsidian-linear-day__status-chevron"});
+		setIcon(chevron, "chevron-down");
+	}
+
+	private async openStatusMenu(
+		button: HTMLButtonElement,
+		issue: {
+			identifier: string;
+			snapshotIdentity?: DaySnapshotIdentity;
+			state: LinearWorkflowState;
+			states?: LinearWorkflowState[];
+			url: string;
+		},
+	): Promise<void> {
+		button.disabled = true;
+		button.classList.add("is-loading");
+
+		let currentState = issue.state;
+		let states = issue.states;
+		try {
+			if (!states) {
+				const liveIssue = await this.plugin.client.fetchIssueByUrl(issue.url, true);
+				currentState = liveIssue.state;
+				states = liveIssue.team.states;
+				this.renderStatusButton(button, currentState);
+			}
+
+			const menu = new Menu();
+			for (const state of states) {
+				menu.addItem((item) => {
+					item
+						.setTitle(buildStatusMenuTitle(state))
+						.setChecked(state.id === currentState.id)
+						.onClick(() => {
+							if (state.id !== currentState.id) {
+								void this.changeIssueStatus(button, issue.url, state, issue.snapshotIdentity);
+							}
+						});
+				});
+			}
+
+			const bounds = button.getBoundingClientRect();
+			menu.showAtPosition({x: bounds.left, y: bounds.bottom + 4});
+		} catch (error) {
+			new Notice(error instanceof Error ? error.message : `Could not load statuses for ${issue.identifier}.`);
+		} finally {
+			button.disabled = false;
+			button.classList.remove("is-loading");
+		}
+	}
+
+	private async changeIssueStatus(
+		button: HTMLButtonElement,
+		issueUrl: string,
+		state: LinearWorkflowState,
+		snapshotIdentity?: DaySnapshotIdentity,
+	): Promise<void> {
+		button.disabled = true;
+		button.classList.add("is-loading");
+		try {
+			const updatedIssue = await this.plugin.client.setIssueState(issueUrl, state.id);
+			this.plugin.notifyIssueStatusChanged(updatedIssue);
+			if (snapshotIdentity) {
+				await this.plugin.updateDaySnapshotIssue(snapshotIdentity, updatedIssue, this.sourcePath);
+			}
+			this.renderStatusButton(button, updatedIssue.state);
+			new Notice(`${updatedIssue.identifier} moved to ${updatedIssue.state.name}.`);
+			await this.render();
+		} catch (error) {
+			new Notice(error instanceof Error ? error.message : "Could not change the Linear status.");
+		} finally {
+			button.disabled = false;
+			button.classList.remove("is-loading");
+		}
 	}
 
 	private renderError(error: unknown): void {
@@ -358,4 +458,15 @@ function toOptionalDate(value: unknown): string | null {
 		return `${year}-${month}-${day}`;
 	}
 	return toOptionalString(value);
+}
+
+function buildStatusMenuTitle(state: LinearWorkflowState): DocumentFragment {
+	const title = document.createDocumentFragment();
+	const wrapper = document.createElement("span");
+	wrapper.className = "obsidian-linear-status-menu-item";
+	const icon = wrapper.createSpan({cls: "obsidian-linear-status-menu-item__icon"});
+	renderStatusIcon(icon, getIssueStatusIcon(state));
+	wrapper.createSpan({text: state.name});
+	title.append(wrapper);
+	return title;
 }

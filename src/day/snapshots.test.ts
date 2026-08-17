@@ -4,6 +4,7 @@ import {
 	captureDayIssues,
 	getDaySnapshot,
 	sanitizeDaySnapshots,
+	updateSnapshotIssue,
 	type DaySnapshotIdentity,
 	type DaySnapshots,
 } from "./snapshots";
@@ -57,5 +58,20 @@ describe("day snapshots", () => {
 
 		expect(getDaySnapshot(snapshots, identity)?.issues["1"]?.identifier).toBe("TYP-1");
 		expect(Object.keys(snapshots)).toHaveLength(1);
+	});
+
+	it("updates display state without changing historical membership", () => {
+		const snapshots: DaySnapshots = {};
+		captureDayIssues(snapshots, identity, [issue("1")], "2026-08-17T14:00:00Z");
+		const updatedIssue = {
+			...issue("1", "Updated title"),
+			state: {id: "progress", name: "In Progress", type: "started"},
+		};
+		const result = updateSnapshotIssue(snapshots, identity, updatedIssue, "2026-08-17T15:00:00Z");
+
+		expect(result.changed).toBe(true);
+		expect(result.snapshot?.issues["1"]?.firstSeenAt).toBe("2026-08-17T14:00:00Z");
+		expect(result.snapshot?.issues["1"]?.state.name).toBe("In Progress");
+		expect(Object.keys(result.snapshot?.issues ?? {})).toEqual(["1"]);
 	});
 });

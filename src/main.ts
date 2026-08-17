@@ -6,6 +6,7 @@ import {
 	getDaySnapshot as findDaySnapshot,
 	mergeDaySnapshots,
 	sanitizeDaySnapshots,
+	updateSnapshotIssue,
 	type DaySnapshot,
 	type DaySnapshotIdentity,
 	type DaySnapshots,
@@ -117,6 +118,20 @@ export default class ObsidianLinearPlugin extends Plugin {
 		if (mergeDaySnapshots(this.daySnapshots, extractNoteDaySnapshots(content))) {
 			await this.persistData();
 		}
+	}
+
+	async updateDaySnapshotIssue(
+		identity: DaySnapshotIdentity,
+		issue: LinearIssue,
+		sourcePath: string,
+	): Promise<void> {
+		const result = updateSnapshotIssue(this.daySnapshots, identity, issue, new Date().toISOString());
+		if (!result.changed || !result.snapshot) {
+			return;
+		}
+
+		await this.persistData();
+		await this.writeDaySnapshotToNote(sourcePath, result.snapshot);
 	}
 
 	rememberPendingWorkspace(workspaceSlug: string): void {

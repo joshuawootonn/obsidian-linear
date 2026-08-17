@@ -1,4 +1,4 @@
-import type {LinearDayIssue, LinearWorkflowState} from "../linear/types";
+import type {LinearDayIssue, LinearIssue, LinearWorkflowState} from "../linear/types";
 
 export const DAY_SNAPSHOT_VERSION = 1;
 
@@ -83,6 +83,39 @@ export function captureDayIssues(
 	}
 
 	return {changed, snapshot};
+}
+
+export function updateSnapshotIssue(
+	snapshots: DaySnapshots,
+	identity: DaySnapshotIdentity,
+	issue: LinearIssue,
+	updatedAt: string,
+): {changed: boolean; snapshot: DaySnapshot | null} {
+	const snapshot = getDaySnapshot(snapshots, identity);
+	const existing = snapshot?.issues[issue.id];
+	if (!snapshot || !existing) {
+		return {changed: false, snapshot};
+	}
+
+	if (
+		existing.title === issue.title &&
+		existing.url === issue.url &&
+		existing.state.id === issue.state.id &&
+		existing.state.name === issue.state.name &&
+		existing.state.type === issue.state.type &&
+		existing.state.color === issue.state.color
+	) {
+		return {changed: false, snapshot};
+	}
+
+	snapshot.issues[issue.id] = {
+		...existing,
+		state: issue.state,
+		title: issue.title,
+		url: issue.url,
+	};
+	snapshot.updatedAt = updatedAt;
+	return {changed: true, snapshot};
 }
 
 export function sanitizeDaySnapshots(value: unknown): DaySnapshots {

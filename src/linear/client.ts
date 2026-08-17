@@ -163,6 +163,16 @@ export class LinearClient {
 		});
 	}
 
+	async setIssueState(url: string, stateId: string): Promise<LinearIssue> {
+		const issue = await this.fetchIssueByUrl(url);
+		const targetState = issue.team.states.find((state) => state.id === stateId);
+		if (!targetState) {
+			throw new Error(`Workflow state is not available for ${issue.identifier}.`);
+		}
+
+		return this.updateIssue(issue, {stateId: targetState.id});
+	}
+
 	async fetchAssignedDayIssues(options: DayIssueQuery): Promise<LinearDayIssue[]> {
 		const token = this.getRequiredToken(options.workspaceSlug);
 		const filters = [

@@ -219,4 +219,27 @@ describe("LinearClient request control", () => {
 		const secondBody = JSON.parse(secondRequest?.body ?? "{}") as {variables?: {after?: string}};
 		expect(secondBody.variables?.after).toBe("next-page");
 	});
+
+	it("changes an issue directly to a selected workflow state", async () => {
+		mockedRequestUrl
+			.mockResolvedValueOnce(issueQueryResponse())
+			.mockResolvedValueOnce(response({
+				data: {
+					issueUpdate: {
+						issue: {...issueNode, state: issueNode.team.states.nodes[1]},
+						success: true,
+					},
+				},
+			}));
+
+		const client = new LinearClient(() => settings);
+		const updated = await client.setIssueState(ISSUE_URL, "done-state");
+
+		expect(updated.state.name).toBe("Done");
+		const mutationRequest = mockedRequestUrl.mock.calls[1]?.[0] as {body?: string} | undefined;
+		const mutationBody = JSON.parse(mutationRequest?.body ?? "{}") as {
+			variables?: {input?: {stateId?: string}};
+		};
+		expect(mutationBody.variables?.input?.stateId).toBe("done-state");
+	});
 });

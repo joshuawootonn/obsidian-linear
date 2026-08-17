@@ -1,7 +1,7 @@
 import {requestUrl} from "obsidian";
 import type {LinearPluginSettings, ReopenStateStrategy} from "../settings";
 import {IssueCache} from "./cache";
-import {resolveCompletedState, resolveReopenState} from "./stateSelection";
+import {resolveCompletedState, resolveReopenState, sortWorkflowStates} from "./stateSelection";
 import type {LinearDayIssue, LinearIssue, LinearTeam, LinearWorkflowState} from "./types";
 import {getIssueKey, parseLinearIdentifier, parseLinearIssueUrl} from "./workspaces";
 
@@ -221,10 +221,12 @@ export class LinearClient {
 										id
 										key
 										name
-										states {
+										states(includeArchived: false) {
 											nodes {
+												archivedAt
 												id
 												name
+												position
 												type
 												color
 											}
@@ -289,10 +291,12 @@ export class LinearClient {
 										id
 										key
 										name
-										states {
+										states(includeArchived: false) {
 											nodes {
+												archivedAt
 												id
 												name
+												position
 												type
 												color
 											}
@@ -351,10 +355,12 @@ export class LinearClient {
 										id
 										key
 										name
-										states {
+										states(includeArchived: false) {
 											nodes {
+												archivedAt
 												id
 												name
+												position
 												type
 												color
 											}
@@ -417,10 +423,12 @@ export class LinearClient {
 								id
 								key
 								name
-								states {
+								states(includeArchived: false) {
 									nodes {
+										archivedAt
 										id
 										name
+										position
 										type
 										color
 									}
@@ -562,7 +570,7 @@ function toLinearIssue(issueNode: IssueNode, workspaceSlug: string, fallbackUrl:
 		id: issueNode.team.id,
 		key: issueNode.team.key,
 		name: issueNode.team.name,
-		states: issueNode.team.states.nodes,
+		states: sortWorkflowStates(issueNode.team.states.nodes),
 	};
 
 	return {

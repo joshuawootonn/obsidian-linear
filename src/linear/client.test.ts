@@ -261,5 +261,7 @@ describe("LinearClient request control", () => {
 		const request = mockedRequestUrl.mock.calls[0]?.[0] as {body?: string} | undefined;
 		const body = JSON.parse(request?.body ?? "{}") as {query?: string};
 		expect(body.query).toContain('id: { in: ["issue-id"] }');
+		expect(body.query).toContain("states(includeArchived: false)");
+		expect(body.query).toContain("position");
 	});
 });

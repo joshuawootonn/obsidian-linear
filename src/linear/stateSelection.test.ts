@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {resolveCompletedState, resolveReopenState} from "./stateSelection";
+import {resolveCompletedState, resolveReopenState, sortWorkflowStates} from "./stateSelection";
 import type {LinearTeam} from "./types";
 
 const team: LinearTeam = {
@@ -29,5 +29,18 @@ describe("stateSelection", () => {
 
 	it("skips completed and canceled states when reopening", () => {
 		expect(resolveReopenState(team, "first-available")?.id).toBe("state-backlog");
+	});
+
+	it("orders workflow states by their Linear position without mutating the response", () => {
+		const states = [
+			{id: "review", name: "In Review", position: 4, type: "started"},
+			{id: "done", name: "Done", position: 0, type: "completed"},
+			{id: "backlog", name: "Backlog", position: 0, type: "backlog"},
+			{id: "progress", name: "In Progress", position: 2, type: "started"},
+			{archivedAt: "2026-08-17T10:00:00Z", id: "deleted", name: "Deleted", position: 0, type: "unstarted"},
+		];
+
+		expect(sortWorkflowStates(states).map((state) => state.id)).toEqual(["backlog", "progress", "review", "done"]);
+		expect(states.map((state) => state.id)).toEqual(["review", "done", "backlog", "progress", "deleted"]);
 	});
 });

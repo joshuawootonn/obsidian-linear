@@ -52,3 +52,35 @@ export function findStateByName(
 
 	return states.find((state) => state.name.trim().toLowerCase() === normalizedName) ?? null;
 }
+
+export function sortWorkflowStates(states: LinearWorkflowState[]): LinearWorkflowState[] {
+	return states
+		.filter((state) => !state.archivedAt)
+		.map((state, index) => ({index, state}))
+		.sort((left, right) => {
+			const typeDifference = getWorkflowTypeOrder(left.state.type) - getWorkflowTypeOrder(right.state.type);
+			if (typeDifference !== 0) {
+				return typeDifference;
+			}
+			const leftPosition = left.state.position;
+			const rightPosition = right.state.position;
+			if (leftPosition === undefined && rightPosition === undefined) {
+				return left.index - right.index;
+			}
+			if (leftPosition === undefined) {
+				return 1;
+			}
+			if (rightPosition === undefined) {
+				return -1;
+			}
+			return leftPosition - rightPosition || left.index - right.index;
+		})
+		.map(({state}) => state);
+}
+
+function getWorkflowTypeOrder(type: string): number {
+	const normalizedType = type.trim().toLowerCase();
+	const order = ["triage", "backlog", "unstarted", "started", "completed", "canceled", "duplicate"];
+	const index = order.indexOf(normalizedType);
+	return index === -1 ? order.length : index;
+}

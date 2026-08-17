@@ -1,8 +1,10 @@
 export type LinearWorkflowType = string;
 
 export interface LinearWorkflowState {
+	archivedAt?: string | null;
 	id: string;
 	name: string;
+	position?: number;
 	type: LinearWorkflowType;
 	color?: string;
 }

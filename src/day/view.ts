@@ -32,6 +32,8 @@ export function registerLinearDayView(plugin: ObsidianLinearPlugin): void {
 }
 
 class LinearDayRenderChild extends MarkdownRenderChild {
+	private hasRenderedDay = false;
+	private refreshButton: HTMLButtonElement | null = null;
 	private rendering = false;
 
 	constructor(
@@ -57,9 +59,13 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 
 		this.rendering = true;
 		try {
-			await this.plugin.importDaySnapshotsFromNote(this.sourcePath);
 			const config = resolveConfig(this.plugin, this.source, this.sourcePath);
-			this.renderLoading(config);
+			if (this.hasRenderedDay) {
+				this.setRefreshLoading(true);
+			} else {
+				this.renderLoading(config);
+			}
+			await this.plugin.importDaySnapshotsFromNote(this.sourcePath);
 			const liveIssues = await this.plugin.client.fetchAssignedDayIssues({
 				dateEnd: config.dateEnd,
 				dateStart: config.dateStart,
@@ -70,10 +76,16 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 			const snapshot = await this.updateSnapshot(config, liveIssues);
 			const capturedLiveIssues = await this.fetchCapturedLiveIssues(config, snapshot, liveIssues);
 			this.renderDay(config, snapshot, liveIssues, capturedLiveIssues);
+			this.hasRenderedDay = true;
 		} catch (error) {
-			this.renderError(error);
+			if (this.hasRenderedDay) {
+				new Notice(error instanceof Error ? error.message : "Could not refresh the Linear day view.");
+			} else {
+				this.renderError(error);
+			}
 		} finally {
 			this.rendering = false;
+			this.setRefreshLoading(false);
 		}
 	}
 
@@ -100,15 +112,8 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 	private renderLoading(config: LinearDayViewConfig): void {
 		this.containerEl.empty();
 		this.containerEl.className = "obsidian-linear-day";
-		const header = this.containerEl.createDiv({cls: "obsidian-linear-day__header"});
-		header.createDiv({
-			cls: "obsidian-linear-day__title",
-			text: formatDayTitle(config.date),
-		});
-		header.createDiv({
-			cls: "obsidian-linear-day__loading",
-			text: "Loading Linear issues…",
-		});
+		this.renderHeader(config);
+		this.setRefreshLoading(true);
 	}
 
 	private renderDay(
@@ -119,26 +124,7 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 	): void {
 		this.containerEl.empty();
 		this.containerEl.className = "obsidian-linear-day";
-
-		const header = this.containerEl.createDiv({cls: "obsidian-linear-day__header"});
-		const heading = header.createDiv();
-		heading.createDiv({
-			cls: "obsidian-linear-day__title",
-			text: formatDayTitle(config.date),
-		});
-		heading.createDiv({
-			cls: "obsidian-linear-day__meta",
-			text: `${config.workspaceSlug} · ${config.timezone}`,
-		});
-
-		const refreshButton = header.createEl("button", {
-			attr: {"aria-label": "Refresh day view"},
-			cls: "clickable-icon obsidian-linear-day__refresh",
-		});
-		setIcon(refreshButton, "refresh-cw");
-		refreshButton.addEventListener("click", () => {
-			void this.render();
-		});
+		this.renderHeader(config);
 
 		const liveById = new Map(
 			[...dayIssues, ...capturedLiveIssues].map((issue) => [issue.id, issue]),
@@ -161,6 +147,37 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 				"",
 			);
 		}
+	}
+
+	private renderHeader(config: LinearDayViewConfig): void {
+		const header = this.containerEl.createDiv({cls: "obsidian-linear-day__header"});
+		const summary = header.createDiv({cls: "obsidian-linear-day__header-summary"});
+		summary.createSpan({
+			cls: "obsidian-linear-day__title",
+			text: formatDayTitle(config.date),
+		});
+		summary.createSpan({
+			cls: "obsidian-linear-day__meta",
+			text: `· ${config.workspaceSlug} · ${config.timezone}`,
+		});
+
+		this.refreshButton = header.createEl("button", {
+			attr: {"aria-label": "Refresh day view"},
+			cls: "clickable-icon obsidian-linear-day__refresh",
+		});
+		setIcon(this.refreshButton, "refresh-cw");
+		this.refreshButton.addEventListener("click", () => {
+			void this.render();
+		});
+	}
+
+	private setRefreshLoading(loading: boolean): void {
+		if (!this.refreshButton) {
+			return;
+		}
+		this.refreshButton.classList.toggle("is-loading", loading);
+		this.refreshButton.disabled = loading;
+		this.refreshButton.setAttribute("aria-busy", String(loading));
 	}
 
 	private renderSection<T>(
@@ -194,7 +211,6 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 			identifier: snapshotIssue.identifier,
 			snapshotIdentity,
 			state: liveIssue?.state ?? snapshotIssue.state,
-			states: liveIssue?.team.states,
 			subtitle: `Captured ${formatCaptureTime(snapshotIssue.firstSeenAt)}`,
 			title: liveIssue?.title ?? snapshotIssue.title,
 			url: liveIssue?.url ?? snapshotIssue.url,
@@ -205,7 +221,6 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 		return this.buildIssueRow({
 			identifier: issue.identifier,
 			state: issue.state,
-			states: issue.team.states,
 			subtitle,
 			title: issue.title,
 			url: issue.url,
@@ -216,7 +231,6 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 		identifier: string;
 		snapshotIdentity?: DaySnapshotIdentity;
 		state: LinearWorkflowState;
-		states?: LinearWorkflowState[];
 		subtitle: string;
 		title: string;
 		url: string;
@@ -263,22 +277,17 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 			identifier: string;
 			snapshotIdentity?: DaySnapshotIdentity;
 			state: LinearWorkflowState;
-			states?: LinearWorkflowState[];
 			url: string;
 		},
 	): Promise<void> {
 		button.disabled = true;
 		button.classList.add("is-loading");
 
-		let currentState = issue.state;
-		let states = issue.states;
 		try {
-			if (!states) {
-				const liveIssue = await this.plugin.client.fetchIssueByUrl(issue.url, true);
-				currentState = liveIssue.state;
-				states = liveIssue.team.states;
-				this.renderStatusButton(button, currentState);
-			}
+			const liveIssue = await this.plugin.client.fetchIssueByUrl(issue.url, true);
+			const currentState = liveIssue.state;
+			const states = liveIssue.team.states;
+			this.renderStatusButton(button, currentState);
 
 			const menu = new Menu();
 			for (const state of states) {

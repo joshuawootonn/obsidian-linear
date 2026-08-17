@@ -46,6 +46,13 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 	}
 
 	override onload(): void {
+		const embedBlock = this.containerEl.closest(".cm-embed-block");
+		if (embedBlock) {
+			embedBlock.classList.add("obsidian-linear-day-embed");
+			this.register(() => {
+				embedBlock.classList.remove("obsidian-linear-day-embed");
+			});
+		}
 		void this.render();
 		this.registerInterval(window.setInterval(() => {
 			void this.render();
@@ -161,7 +168,7 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 			text: `· ${config.workspaceSlug} · ${config.timezone}`,
 		});
 
-		this.refreshButton = header.createEl("button", {
+		this.refreshButton = summary.createEl("button", {
 			attr: {"aria-label": "Refresh day view"},
 			cls: "clickable-icon obsidian-linear-day__refresh",
 		});

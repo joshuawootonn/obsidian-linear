@@ -1,7 +1,7 @@
 import {describe, expect, it} from "vitest";
 import type {LinearDayIssue} from "../linear/types";
 import type {DaySnapshotIssue} from "./snapshots";
-import {getVisiblePlannedIssues} from "./viewState";
+import {getCompletedIssuesForDay, getVisiblePlannedIssues} from "./viewState";
 
 const capturedIssue: DaySnapshotIssue = {
 	firstSeenAt: "2026-08-17T14:00:00Z",
@@ -31,5 +31,16 @@ describe("day view state", () => {
 	it("removes captured issues from the plan when their live state is completed", () => {
 		const result = getVisiblePlannedIssues([capturedIssue], new Map([[capturedIssue.id, liveIssue("completed")]]));
 		expect(result).toEqual([]);
+	});
+
+	it("includes issues completed during the day without requiring plan membership", () => {
+		const completedIssue = liveIssue("completed");
+		const result = getCompletedIssuesForDay(
+			[completedIssue],
+			"2026-08-17T05:00:00.000Z",
+			"2026-08-18T05:00:00.000Z",
+		);
+
+		expect(result).toEqual([completedIssue]);
 	});
 });

@@ -39,6 +39,7 @@ export default class ObsidianLinearPlugin extends Plugin {
 	taskSync: TaskSyncService;
 	pendingWorkspaceSlug?: string;
 	private pollIntervalId: number | null = null;
+	private readonly issueStatusListeners = new Set<(issue: LinearIssue) => void>();
 	private readonly livePreviewViews = new Set<EditorView>();
 	private readonly issueStatesByKey = new Map<string, LinearWorkflowState>();
 	private daySnapshots: DaySnapshots = {};
@@ -176,6 +177,20 @@ export default class ObsidianLinearPlugin extends Plugin {
 	notifyIssueStatusChanged(issue: LinearIssue): void {
 		this.rememberIssueStatus(issue);
 		this.refreshLivePreviewStatuses();
+		for (const listener of this.issueStatusListeners) {
+			try {
+				listener(issue);
+			} catch (error) {
+				console.error("[obsidian-linear] Issue status listener failed", error);
+			}
+		}
+	}
+
+	registerIssueStatusListener(listener: (issue: LinearIssue) => void): () => void {
+		this.issueStatusListeners.add(listener);
+		return () => {
+			this.issueStatusListeners.delete(listener);
+		};
 	}
 
 	refreshLivePreviewStatuses(): void {

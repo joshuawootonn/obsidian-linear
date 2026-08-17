@@ -3,7 +3,7 @@ import type ObsidianLinearPlugin from "../main";
 import type {LinearDayIssue, LinearWorkflowState} from "../linear/types";
 import {getIssueStatusIcon, renderStatusIcon} from "../render/statusIcons";
 import type {DaySnapshot, DaySnapshotIdentity, DaySnapshotIssue} from "./snapshots";
-import {getVisiblePlannedIssues} from "./viewState";
+import {getCompletedIssuesForDay, getVisiblePlannedIssues} from "./viewState";
 
 const DAY_VIEW_REFRESH_MS = 5 * 60_000;
 const DEFAULT_DAY_STATUS = "Today";
@@ -53,6 +53,12 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 				embedBlock.classList.remove("obsidian-linear-day-embed");
 			});
 		}
+		this.register(this.plugin.registerIssueStatusListener((issue) => {
+			const config = resolveConfig(this.plugin, this.source, this.sourcePath);
+			if (config.isCurrentDay && namesEqual(issue.workspaceSlug, config.workspaceSlug)) {
+				void this.render();
+			}
+		}));
 		void this.render();
 		this.registerInterval(window.setInterval(() => {
 			void this.render();
@@ -137,7 +143,7 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 			[...dayIssues, ...capturedLiveIssues].map((issue) => [issue.id, issue]),
 		);
 		const planned = getVisiblePlannedIssues(Object.values(snapshot?.issues ?? {}), liveById);
-		const completed = dayIssues.filter((issue) => completedDuring(issue, config));
+		const completed = getCompletedIssuesForDay(dayIssues, config.dateStart, config.dateEnd);
 		const snapshotIdentity = toSnapshotIdentity(config);
 
 		this.renderSection(
@@ -330,12 +336,12 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 		button.classList.add("is-loading");
 		try {
 			const updatedIssue = await this.plugin.client.setIssueState(issueUrl, state.id);
-			this.plugin.notifyIssueStatusChanged(updatedIssue);
 			if (snapshotIdentity) {
 				await this.plugin.updateDaySnapshotIssue(snapshotIdentity, updatedIssue, this.sourcePath);
 			}
 			this.renderStatusButton(button, updatedIssue.state);
 			new Notice(`${updatedIssue.identifier} moved to ${updatedIssue.state.name}.`);
+			this.plugin.notifyIssueStatusChanged(updatedIssue);
 			await this.render();
 		} catch (error) {
 			new Notice(error instanceof Error ? error.message : "Could not change the Linear status.");
@@ -451,14 +457,6 @@ function completionTime(value: string | null): string {
 		return "Completed";
 	}
 	return `Completed ${new Intl.DateTimeFormat(undefined, {hour: "numeric", minute: "2-digit"}).format(new Date(value))}`;
-}
-
-function completedDuring(issue: LinearDayIssue, config: LinearDayViewConfig): boolean {
-	if (!issue.completedAt) {
-		return false;
-	}
-	const completedAt = Date.parse(issue.completedAt);
-	return completedAt >= Date.parse(config.dateStart) && completedAt < Date.parse(config.dateEnd);
 }
 
 function namesEqual(left: string, right: string): boolean {

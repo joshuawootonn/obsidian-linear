@@ -175,7 +175,7 @@ describe("LinearClient request control", () => {
 		expect(mockedRequestUrl).toHaveBeenCalledTimes(2);
 	});
 
-	it("fetches assigned Today and completed issues with pagination", async () => {
+	it("fetches assigned Today and independently completed issues with pagination", async () => {
 		mockedRequestUrl
 			.mockResolvedValueOnce(response({
 				data: {
@@ -191,7 +191,12 @@ describe("LinearClient request control", () => {
 				data: {
 					viewer: {
 						assignedIssues: {
-							nodes: [{...issueNode, completedAt: "2026-08-17T18:00:00Z", id: "completed-issue"}],
+							nodes: [{
+								...issueNode,
+								completedAt: "2026-08-17T18:00:00Z",
+								id: "completed-issue",
+								state: issueNode.team.states.nodes[1],
+							}],
 							pageInfo: {endCursor: null, hasNextPage: false},
 						},
 					},
@@ -209,11 +214,13 @@ describe("LinearClient request control", () => {
 
 		expect(issues).toHaveLength(2);
 		expect(issues[1]?.completedAt).toBe("2026-08-17T18:00:00Z");
+		expect(issues[1]?.state.name).toBe("Done");
 		expect(mockedRequestUrl).toHaveBeenCalledTimes(2);
 		const firstRequest = mockedRequestUrl.mock.calls[0]?.[0] as {body?: string} | undefined;
 		const firstBody = JSON.parse(firstRequest?.body ?? "{}") as {query?: string; variables?: {after?: string | null}};
 		expect(firstBody.query).toContain("eqIgnoreCase: \"Today\"");
-		expect(firstBody.query).toContain("completedAt");
+		expect(firstBody.query).toContain("filter: { or:");
+		expect(firstBody.query).toContain("{ completedAt: { gte:");
 		expect(firstBody.variables?.after).toBeNull();
 		const secondRequest = mockedRequestUrl.mock.calls[1]?.[0] as {body?: string} | undefined;
 		const secondBody = JSON.parse(secondRequest?.body ?? "{}") as {variables?: {after?: string}};

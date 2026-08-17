@@ -67,7 +67,8 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 				workspaceSlug: config.workspaceSlug,
 			});
 			const snapshot = await this.updateSnapshot(config, liveIssues);
-			this.renderDay(config, snapshot, liveIssues);
+			const capturedLiveIssues = await this.fetchCapturedLiveIssues(config, snapshot, liveIssues);
+			this.renderDay(config, snapshot, liveIssues, capturedLiveIssues);
 		} catch (error) {
 			this.renderError(error);
 		} finally {
@@ -85,6 +86,16 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 		return this.plugin.captureDaySnapshot(identity, statusIssues, new Date().toISOString(), this.sourcePath);
 	}
 
+	private async fetchCapturedLiveIssues(
+		config: LinearDayViewConfig,
+		snapshot: DaySnapshot | null,
+		dayIssues: LinearDayIssue[],
+	): Promise<LinearDayIssue[]> {
+		const alreadyLoaded = new Set(dayIssues.map((issue) => issue.id));
+		const missingIds = Object.keys(snapshot?.issues ?? {}).filter((issueId) => !alreadyLoaded.has(issueId));
+		return this.plugin.client.fetchIssuesByIds(config.workspaceSlug, missingIds);
+	}
+
 	private renderLoading(config: LinearDayViewConfig): void {
 		this.containerEl.empty();
 		this.containerEl.className = "obsidian-linear-day";
@@ -99,7 +110,12 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 		});
 	}
 
-	private renderDay(config: LinearDayViewConfig, snapshot: DaySnapshot | null, liveIssues: LinearDayIssue[]): void {
+	private renderDay(
+		config: LinearDayViewConfig,
+		snapshot: DaySnapshot | null,
+		dayIssues: LinearDayIssue[],
+		capturedLiveIssues: LinearDayIssue[],
+	): void {
 		this.containerEl.empty();
 		this.containerEl.className = "obsidian-linear-day";
 
@@ -123,9 +139,11 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 			void this.render();
 		});
 
-		const liveById = new Map(liveIssues.map((issue) => [issue.id, issue]));
+		const liveById = new Map(
+			[...dayIssues, ...capturedLiveIssues].map((issue) => [issue.id, issue]),
+		);
 		const planned = Object.values(snapshot?.issues ?? {});
-		const completed = liveIssues.filter((issue) => completedDuring(issue, config));
+		const completed = dayIssues.filter((issue) => completedDuring(issue, config));
 		const snapshotIdentity = toSnapshotIdentity(config);
 
 		this.renderSection(
@@ -144,7 +162,7 @@ class LinearDayRenderChild extends MarkdownRenderChild {
 		if (config.isCurrentDay) {
 			this.containerEl.createDiv({
 				cls: "obsidian-linear-day__footnote",
-				text: "The plan is append-only and refreshes every five minutes while this view is open.",
+				text: "Plan membership is historical. Current statuses refresh every five minutes while this view is open.",
 			});
 		}
 	}

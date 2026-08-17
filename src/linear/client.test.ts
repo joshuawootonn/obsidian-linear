@@ -242,4 +242,24 @@ describe("LinearClient request control", () => {
 		};
 		expect(mutationBody.variables?.input?.stateId).toBe("done-state");
 	});
+
+	it("batch-fetches current metadata for captured issue IDs", async () => {
+		mockedRequestUrl.mockResolvedValueOnce(response({
+			data: {
+				issues: {
+					nodes: [{...issueNode, state: {...issueNode.state, name: "In Progress"}}],
+					pageInfo: {endCursor: null, hasNextPage: false},
+				},
+			},
+		}));
+
+		const client = new LinearClient(() => settings);
+		const issues = await client.fetchIssuesByIds("type-the-word", ["issue-id", "issue-id"]);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0]?.state.name).toBe("In Progress");
+		const request = mockedRequestUrl.mock.calls[0]?.[0] as {body?: string} | undefined;
+		const body = JSON.parse(request?.body ?? "{}") as {query?: string};
+		expect(body.query).toContain('id: { in: ["issue-id"] }');
+	});
 });

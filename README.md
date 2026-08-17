@@ -51,7 +51,7 @@ workspace: type-the-word
 - `workspace` can be omitted when exactly one workspace is connected.
 - The view contains every assigned issue observed in the configured status plus every assigned issue completed during that local calendar day.
 - Select an issue's colored status control to move it to any workflow state available for its Linear team.
-- While the current-day view is open, it refreshes every five minutes. Observed plan membership is append-only, so moving an issue later does not rewrite history.
+- While the current-day view is open, it refreshes every five minutes. Observed plan membership is append-only, while every captured issue's status remains live even after it leaves `Today`.
 - Snapshots are stored in plugin data and mirrored into an invisible `obsidian-linear-day-snapshots` HTML comment in the note for portability and recovery.
 
 The plugin can only record status membership that it observes while Obsidian has the view open. Completed issues are queried by Linear's `completedAt` timestamp and can be reconstructed later.

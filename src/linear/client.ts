@@ -44,6 +44,16 @@ interface DayIssuesQueryResult {
 	};
 }
 
+interface IssuesByIdQueryResult {
+	issues: {
+		nodes: IssueNode[];
+		pageInfo: {
+			endCursor: string | null;
+			hasNextPage: boolean;
+		};
+	};
+}
+
 export interface DayIssueQuery {
 	dateEnd: string;
 	dateStart: string;
@@ -239,6 +249,73 @@ export class LinearClient {
 			}
 			after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
 		} while (after);
+
+		return issues;
+	}
+
+	async fetchIssuesByIds(workspaceSlug: string, issueIds: string[]): Promise<LinearDayIssue[]> {
+		const uniqueIds = Array.from(new Set(issueIds.filter((id) => id.length > 0)));
+		if (uniqueIds.length === 0) {
+			return [];
+		}
+
+		const token = this.getRequiredToken(workspaceSlug);
+		const issues: LinearDayIssue[] = [];
+		for (const ids of chunks(uniqueIds, 100)) {
+			let after: string | null = null;
+			do {
+				const result: IssuesByIdQueryResult = await this.query<IssuesByIdQueryResult>(
+					token,
+					`
+						query LinearIssuesById($after: String) {
+							issues(
+								after: $after
+								first: 50
+								filter: { id: { in: ${JSON.stringify(ids)} } }
+							) {
+								nodes {
+									id
+									identifier
+									title
+									url
+									completedAt
+									state {
+										id
+										name
+										type
+										color
+									}
+									team {
+										id
+										key
+										name
+										states {
+											nodes {
+												id
+												name
+												type
+												color
+											}
+										}
+									}
+								}
+								pageInfo {
+									endCursor
+									hasNextPage
+								}
+							}
+						}
+					`,
+					{after},
+				);
+				for (const node of result.issues.nodes) {
+					const issue = toLinearDayIssue(node, workspaceSlug);
+					issues.push(issue);
+					this.cache.set(getIssueKey(issue), issue);
+				}
+				after = result.issues.pageInfo.hasNextPage ? result.issues.pageInfo.endCursor : null;
+			} while (after);
+		}
 
 		return issues;
 	}
@@ -508,4 +585,12 @@ function toLinearDayIssue(issueNode: IssueNode, workspaceSlug: string): LinearDa
 
 function toGraphQlString(value: string): string {
 	return JSON.stringify(value);
+}
+
+function chunks<T>(values: T[], size: number): T[][] {
+	const result: T[][] = [];
+	for (let index = 0; index < values.length; index += size) {
+		result.push(values.slice(index, index + size));
+	}
+	return result;
 }

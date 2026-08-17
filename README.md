@@ -6,6 +6,8 @@ Obsidian Linear connects Linear issue links to Markdown tasks inside an Obsidian
 
 - Turns pasted Linear issue URLs into Markdown task items.
 - Renders Linear issue links with a richer card that shows the issue title and current status.
+- Uses Linear workflow colors and Linear-style status category icons.
+- Embeds a historical daily view of issues planned in a `Today` status and issues completed that day.
 - Supports multiple Linear workspaces by mapping each workspace slug to a personal API token.
 - Syncs Linear completion state into Obsidian checkboxes and pushes checkbox changes back to Linear.
 - Refreshes the active note automatically when you focus it.
@@ -31,6 +33,27 @@ Pasted and normalized tasks use inline Markdown links:
 ```
 
 Older two-line tasks are still recognized and will be migrated to the inline-link format the next time the plugin refreshes the note.
+
+## Daily view and historical snapshots
+
+Add a `linear-day` block to a daily note:
+
+````md
+```linear-day
+date: 2026-08-17
+status: Today
+workspace: type-the-word
+```
+````
+
+- `date` defaults to a `YYYY-MM-DD` daily note filename, then to the current local date.
+- `status` defaults to `Today`.
+- `workspace` can be omitted when exactly one workspace is connected.
+- The view contains every assigned issue observed in the configured status plus every assigned issue completed during that local calendar day.
+- While the current-day view is open, it refreshes every five minutes. Observed plan membership is append-only, so moving an issue later does not rewrite history.
+- Snapshots are stored in plugin data and mirrored into an invisible `obsidian-linear-day-snapshots` HTML comment in the note for portability and recovery.
+
+The plugin can only record status membership that it observes while Obsidian has the view open. Completed issues are queried by Linear's `completedAt` timestamp and can be reconstructed later.
 
 ## Development setup
 

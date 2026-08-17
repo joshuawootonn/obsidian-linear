@@ -1,13 +1,14 @@
-import {MarkdownRenderChild, Notice, setIcon} from "obsidian";
+import {MarkdownRenderChild, Notice} from "obsidian";
 import type ObsidianLinearPlugin from "../main";
 import {MissingWorkspaceTokenError} from "../linear/client";
-import type {LinearIssue} from "../linear/types";
+import type {LinearIssue, LinearWorkflowState} from "../linear/types";
 import {parseLinearIssueUrl} from "../linear/workspaces";
 import {
 	getErrorStatusIcon,
 	getIssueStatusIcon,
 	getLoadingStatusIcon,
 	getMissingConnectionStatusIcon,
+	renderStatusIcon,
 	type StatusIconConfig,
 } from "./statusIcons";
 
@@ -109,6 +110,7 @@ class LinearIssueRenderChild extends MarkdownRenderChild {
 		return this.buildCard(issue.title, issue.workspaceSlug, issue.url, {
 			identifier: issue.identifier,
 			statusLabel: issue.state.name,
+			statusState: issue.state,
 		});
 	}
 
@@ -175,7 +177,7 @@ class LinearIssueRenderChild extends MarkdownRenderChild {
 			status.classList.add("obsidian-linear-inline-status--spin");
 		}
 
-		setIcon(status, config.icon);
+		renderStatusIcon(status, config);
 		return status;
 	}
 
@@ -187,6 +189,7 @@ class LinearIssueRenderChild extends MarkdownRenderChild {
 			description?: string;
 			identifier?: string;
 			statusLabel: string;
+			statusState?: LinearWorkflowState;
 		},
 	): HTMLElement {
 		const card = document.createElement("a");
@@ -200,7 +203,14 @@ class LinearIssueRenderChild extends MarkdownRenderChild {
 		workspaceEl.setText(workspaceSlug);
 
 		const statusEl = header.createSpan({cls: "obsidian-linear-card__status"});
-		statusEl.setText(options.statusLabel);
+		if (options.statusState) {
+			statusEl.classList.add("obsidian-linear-card__status--workflow");
+			const statusIcon = statusEl.createSpan({cls: "obsidian-linear-card__status-icon"});
+			renderStatusIcon(statusIcon, getIssueStatusIcon(options.statusState));
+			statusEl.createSpan({text: options.statusLabel});
+		} else {
+			statusEl.setText(options.statusLabel);
+		}
 
 		if (options.identifier) {
 			const identifierEl = card.createDiv({cls: "obsidian-linear-card__identifier"});

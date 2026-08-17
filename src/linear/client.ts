@@ -2,7 +2,7 @@ import {requestUrl} from "obsidian";
 import type {LinearPluginSettings, ReopenStateStrategy} from "../settings";
 import {IssueCache} from "./cache";
 import {resolveCompletedState, resolveReopenState} from "./stateSelection";
-import type {LinearIssue, LinearTeam, LinearWorkflowState} from "./types";
+import type {LinearDayIssue, LinearIssue, LinearTeam, LinearWorkflowState} from "./types";
 import {getIssueKey, parseLinearIdentifier, parseLinearIssueUrl} from "./workspaces";
 
 interface GraphQLResponse<T> {
@@ -16,6 +16,7 @@ interface GraphQLResponse<T> {
 }
 
 interface IssueNode {
+	completedAt?: string | null;
 	id: string;
 	identifier: string;
 	title: string;
@@ -29,6 +30,26 @@ interface IssueNode {
 			nodes: LinearWorkflowState[];
 		};
 	};
+}
+
+interface DayIssuesQueryResult {
+	viewer: {
+		assignedIssues: {
+			nodes: IssueNode[];
+			pageInfo: {
+				endCursor: string | null;
+				hasNextPage: boolean;
+			};
+		};
+	};
+}
+
+export interface DayIssueQuery {
+	dateEnd: string;
+	dateStart: string;
+	includeCurrentStatus: boolean;
+	statusName: string;
+	workspaceSlug: string;
 }
 
 interface IssueQueryResult {
@@ -142,6 +163,76 @@ export class LinearClient {
 		});
 	}
 
+	async fetchAssignedDayIssues(options: DayIssueQuery): Promise<LinearDayIssue[]> {
+		const token = this.getRequiredToken(options.workspaceSlug);
+		const filters = [
+			`{ completedAt: { gte: ${toGraphQlString(options.dateStart)}, lt: ${toGraphQlString(options.dateEnd)} } }`,
+		];
+		if (options.includeCurrentStatus) {
+			filters.unshift(`{ state: { name: { eqIgnoreCase: ${toGraphQlString(options.statusName)} } } }`);
+		}
+
+		const issues: LinearDayIssue[] = [];
+		let after: string | null = null;
+		do {
+			const result: DayIssuesQueryResult = await this.query<DayIssuesQueryResult>(
+				token,
+				`
+					query AssignedLinearDayIssues($after: String) {
+						viewer {
+							assignedIssues(
+								after: $after
+								first: 50
+								filter: { or: [${filters.join(", ")}] }
+							) {
+								nodes {
+									id
+									identifier
+									title
+									url
+									completedAt
+									state {
+										id
+										name
+										type
+										color
+									}
+									team {
+										id
+										key
+										name
+										states {
+											nodes {
+												id
+												name
+												type
+												color
+											}
+										}
+									}
+								}
+								pageInfo {
+									endCursor
+									hasNextPage
+								}
+							}
+						}
+					}
+				`,
+				{after},
+			);
+			const connection = result.viewer.assignedIssues;
+			for (const node of connection.nodes) {
+				const issue = toLinearDayIssue(node, options.workspaceSlug);
+				issues.push(issue);
+				this.cache.set(getIssueKey(issue), issue);
+			}
+			after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
+		} while (after);
+
+		return issues;
+	}
+
 	private async fetchIssueByIdentifier(workspaceSlug: string, identifier: string, fallbackUrl: string): Promise<LinearIssue> {
 		const token = this.getRequiredToken(workspaceSlug);
 		const parsedIdentifier = parseLinearIdentifier(identifier);
@@ -167,6 +258,7 @@ export class LinearClient {
 										id
 										name
 										type
+										color
 									}
 									team {
 										id
@@ -177,6 +269,7 @@ export class LinearClient {
 												id
 												name
 												type
+												color
 											}
 										}
 									}
@@ -231,6 +324,7 @@ export class LinearClient {
 								id
 								name
 								type
+								color
 							}
 							team {
 								id
@@ -241,6 +335,7 @@ export class LinearClient {
 										id
 										name
 										type
+										color
 									}
 								}
 							}
@@ -392,4 +487,15 @@ function toLinearIssue(issueNode: IssueNode, workspaceSlug: string, fallbackUrl:
 		state: issueNode.state,
 		team,
 	};
+}
+
+function toLinearDayIssue(issueNode: IssueNode, workspaceSlug: string): LinearDayIssue {
+	return {
+		...toLinearIssue(issueNode, workspaceSlug, issueNode.url),
+		completedAt: issueNode.completedAt ?? null,
+	};
+}
+
+function toGraphQlString(value: string): string {
+	return JSON.stringify(value);
 }

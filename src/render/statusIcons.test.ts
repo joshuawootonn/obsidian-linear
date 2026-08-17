@@ -2,13 +2,15 @@ import {describe, expect, it} from "vitest";
 import {getErrorStatusIcon, getIssueStatusIcon, getLoadingStatusIcon, getMissingConnectionStatusIcon} from "./statusIcons";
 
 describe("statusIcons", () => {
-	it("maps completed states to a success icon", () => {
+	it("maps completed states to a Linear-style icon and preserves its color", () => {
 		expect(getIssueStatusIcon({
+			color: "#5E6AD2",
 			id: "done",
 			name: "Done",
 			type: "completed",
 		})).toMatchObject({
-			icon: "check",
+			color: "#5E6AD2",
+			icon: "linear-completed",
 			tone: "success",
 		});
 	});
@@ -19,29 +21,29 @@ describe("statusIcons", () => {
 			name: "In Progress",
 			type: "started",
 		})).toMatchObject({
-			icon: "play",
+			icon: "linear-started",
 			tone: "active",
 		});
 	});
 
-	it("maps paused-like states to a warning icon", () => {
+	it("uses the workflow category instead of guessing from custom status names", () => {
 		expect(getIssueStatusIcon({
 			id: "paused",
 			name: "Paused",
 			type: "started",
 		})).toMatchObject({
-			icon: "pause",
-			tone: "warning",
+			icon: "linear-started",
+			tone: "active",
 		});
 	});
 
-	it("maps review, canceled, and duplicate states explicitly", () => {
+	it("maps custom names to their Linear workflow categories", () => {
 		expect(getIssueStatusIcon({
 			id: "review",
 			name: "In Review",
 			type: "started",
 		})).toMatchObject({
-			icon: "message-square-more",
+			icon: "linear-started",
 			tone: "active",
 		});
 
@@ -50,7 +52,7 @@ describe("statusIcons", () => {
 			name: "Canceled",
 			type: "canceled",
 		})).toMatchObject({
-			icon: "x",
+			icon: "linear-canceled",
 			tone: "warning",
 		});
 
@@ -59,7 +61,7 @@ describe("statusIcons", () => {
 			name: "Duplicate",
 			type: "canceled",
 		})).toMatchObject({
-			icon: "copy",
+			icon: "linear-canceled",
 			tone: "warning",
 		});
 	});

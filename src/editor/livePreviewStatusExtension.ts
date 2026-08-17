@@ -7,8 +7,9 @@ import {
 	type ViewUpdate,
 	WidgetType,
 } from "@codemirror/view";
-import {Notice, setIcon} from "obsidian";
+import {Notice} from "obsidian";
 import type ObsidianLinearPlugin from "../main";
+import {getNoteDaySnapshotRanges} from "../day/noteSnapshots";
 import {MissingWorkspaceTokenError} from "../linear/client";
 import {getLivePreviewStatusMatch} from "./livePreviewStatusMatches";
 import {forceLivePreviewStatusRefreshEffect} from "./livePreviewRefresh";
@@ -17,6 +18,7 @@ import {
 	getIssueStatusIcon,
 	getLoadingStatusIcon,
 	getMissingConnectionStatusIcon,
+	renderStatusIcon,
 	type StatusIconConfig,
 } from "../render/statusIcons";
 
@@ -85,6 +87,9 @@ export function createLivePreviewStatusExtension(plugin: ObsidianLinearPlugin): 
 				}
 
 				const decorations = [];
+				for (const range of getNoteDaySnapshotRanges(this.view.state.doc.toString())) {
+					decorations.push(Decoration.replace({}).range(range.from, range.to));
+				}
 				for (const range of this.view.visibleRanges) {
 					let line = this.view.state.doc.lineAt(range.from);
 					while (line.from <= range.to) {
@@ -161,6 +166,7 @@ class InlineStatusWidget extends WidgetType {
 	override eq(other: InlineStatusWidget): boolean {
 		return (
 			this.config.icon === other.config.icon &&
+			this.config.color === other.config.color &&
 			this.config.label === other.config.label &&
 			this.config.spin === other.config.spin &&
 			this.config.tone === other.config.tone &&
@@ -177,7 +183,7 @@ class InlineStatusWidget extends WidgetType {
 			status.classList.add("obsidian-linear-inline-status--spin");
 		}
 
-		setIcon(status, this.config.icon);
+		renderStatusIcon(status, this.config);
 
 		if (this.config.icon === getMissingConnectionStatusIcon().icon) {
 			status.classList.add("obsidian-linear-inline-status--clickable");

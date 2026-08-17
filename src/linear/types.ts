@@ -4,6 +4,7 @@ export interface LinearWorkflowState {
 	id: string;
 	name: string;
 	type: LinearWorkflowType;
+	color?: string;
 }
 
 export interface LinearTeam {
@@ -21,6 +22,10 @@ export interface LinearIssue {
 	workspaceSlug: string;
 	state: LinearWorkflowState;
 	team: LinearTeam;
+}
+
+export interface LinearDayIssue extends LinearIssue {
+	completedAt: string | null;
 }
 
 export interface TaskSeed {

@@ -1,10 +1,21 @@
-import {Editor, Notice, Plugin} from "obsidian";
+import {Editor, Notice, Plugin, TFile} from "obsidian";
 import type {EditorView} from "@codemirror/view";
+import {extractNoteDaySnapshots, upsertNoteDaySnapshot} from "./day/noteSnapshots";
+import {
+	captureDayIssues as captureSnapshotIssues,
+	getDaySnapshot as findDaySnapshot,
+	mergeDaySnapshots,
+	sanitizeDaySnapshots,
+	type DaySnapshot,
+	type DaySnapshotIdentity,
+	type DaySnapshots,
+} from "./day/snapshots";
+import {registerLinearDayView} from "./day/view";
 import {createLivePreviewStatusExtension} from "./editor/livePreviewStatusExtension";
 import {forceLivePreviewStatusRefresh} from "./editor/livePreviewRefresh";
 import {createPasteExtension} from "./editor/pasteExtension";
 import {LinearClient} from "./linear/client";
-import type {LinearIssue, LinearWorkflowState, TaskSeed} from "./linear/types";
+import type {LinearDayIssue, LinearIssue, LinearWorkflowState, TaskSeed} from "./linear/types";
 import {extractLinearIssueReferences, getIssueKey} from "./linear/workspaces";
 import {registerLinkRenderer} from "./render/linkRenderer";
 import {
@@ -29,6 +40,8 @@ export default class ObsidianLinearPlugin extends Plugin {
 	private pollIntervalId: number | null = null;
 	private readonly livePreviewViews = new Set<EditorView>();
 	private readonly issueStatesByKey = new Map<string, LinearWorkflowState>();
+	private daySnapshots: DaySnapshots = {};
+	private dataSave = Promise.resolve();
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -42,6 +55,7 @@ export default class ObsidianLinearPlugin extends Plugin {
 			createLivePreviewStatusExtension(this),
 		]);
 		registerLinkRenderer(this);
+		registerLinearDayView(this);
 
 		this.registerEvent(this.app.vault.on("modify", (file) => {
 			void this.taskSync.handleVaultModify(file);
@@ -62,14 +76,47 @@ export default class ObsidianLinearPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		const loaded = await this.loadData() as Partial<LinearPluginSettings> | null;
+		const loaded = await this.loadData() as (Partial<LinearPluginSettings> & {daySnapshots?: unknown}) | null;
 		this.settings = sanitizeSettings(Object.assign({}, DEFAULT_SETTINGS, loaded ?? {}));
+		this.daySnapshots = sanitizeDaySnapshots(loaded?.daySnapshots);
 	}
 
 	async saveSettings(): Promise<void> {
 		this.settings = sanitizeSettings(this.settings);
-		await this.saveData(this.settings);
+		await this.persistData();
 		this.restartPolling();
+	}
+
+	getDaySnapshot(identity: DaySnapshotIdentity): DaySnapshot | null {
+		return findDaySnapshot(this.daySnapshots, identity);
+	}
+
+	async captureDaySnapshot(
+		identity: DaySnapshotIdentity,
+		issues: LinearDayIssue[],
+		capturedAt: string,
+		sourcePath?: string,
+	): Promise<DaySnapshot> {
+		const result = captureSnapshotIssues(this.daySnapshots, identity, issues, capturedAt);
+		if (result.changed) {
+			await this.persistData();
+			if (sourcePath) {
+				await this.writeDaySnapshotToNote(sourcePath, result.snapshot);
+			}
+		}
+		return result.snapshot;
+	}
+
+	async importDaySnapshotsFromNote(sourcePath: string): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(sourcePath);
+		if (!(file instanceof TFile)) {
+			return;
+		}
+
+		const content = await this.app.vault.cachedRead(file);
+		if (mergeDaySnapshots(this.daySnapshots, extractNoteDaySnapshots(content))) {
+			await this.persistData();
+		}
 	}
 
 	rememberPendingWorkspace(workspaceSlug: string): void {
@@ -191,6 +238,25 @@ export default class ObsidianLinearPlugin extends Plugin {
 			name: "Open workspace settings",
 			callback: () => this.openSettingsForWorkspace(this.pendingWorkspaceSlug),
 		});
+	}
+
+	private persistData(): Promise<void> {
+		this.dataSave = this.dataSave
+			.catch(() => undefined)
+			.then(() => this.saveData({
+				...this.settings,
+				daySnapshots: this.daySnapshots,
+			}));
+		return this.dataSave;
+	}
+
+	private async writeDaySnapshotToNote(sourcePath: string, snapshot: DaySnapshot): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(sourcePath);
+		if (!(file instanceof TFile)) {
+			return;
+		}
+
+		await this.app.vault.process(file, (content) => upsertNoteDaySnapshot(content, snapshot));
 	}
 
 	private restartPolling(): void {

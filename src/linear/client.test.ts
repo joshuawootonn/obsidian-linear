@@ -174,4 +174,49 @@ describe("LinearClient request control", () => {
 		expect(cachedIssue.title).toBe("Updated title");
 		expect(mockedRequestUrl).toHaveBeenCalledTimes(2);
 	});
+
+	it("fetches assigned Today and completed issues with pagination", async () => {
+		mockedRequestUrl
+			.mockResolvedValueOnce(response({
+				data: {
+					viewer: {
+						assignedIssues: {
+							nodes: [{...issueNode, completedAt: null}],
+							pageInfo: {endCursor: "next-page", hasNextPage: true},
+						},
+					},
+				},
+			}))
+			.mockResolvedValueOnce(response({
+				data: {
+					viewer: {
+						assignedIssues: {
+							nodes: [{...issueNode, completedAt: "2026-08-17T18:00:00Z", id: "completed-issue"}],
+							pageInfo: {endCursor: null, hasNextPage: false},
+						},
+					},
+				},
+			}));
+
+		const client = new LinearClient(() => settings);
+		const issues = await client.fetchAssignedDayIssues({
+			dateEnd: "2026-08-18T05:00:00.000Z",
+			dateStart: "2026-08-17T05:00:00.000Z",
+			includeCurrentStatus: true,
+			statusName: "Today",
+			workspaceSlug: "type-the-word",
+		});
+
+		expect(issues).toHaveLength(2);
+		expect(issues[1]?.completedAt).toBe("2026-08-17T18:00:00Z");
+		expect(mockedRequestUrl).toHaveBeenCalledTimes(2);
+		const firstRequest = mockedRequestUrl.mock.calls[0]?.[0] as {body?: string} | undefined;
+		const firstBody = JSON.parse(firstRequest?.body ?? "{}") as {query?: string; variables?: {after?: string | null}};
+		expect(firstBody.query).toContain("eqIgnoreCase: \"Today\"");
+		expect(firstBody.query).toContain("completedAt");
+		expect(firstBody.variables?.after).toBeNull();
+		const secondRequest = mockedRequestUrl.mock.calls[1]?.[0] as {body?: string} | undefined;
+		const secondBody = JSON.parse(secondRequest?.body ?? "{}") as {variables?: {after?: string}};
+		expect(secondBody.variables?.after).toBe("next-page");
+	});
 });
